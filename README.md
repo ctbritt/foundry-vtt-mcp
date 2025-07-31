@@ -1,17 +1,17 @@
 # Foundry VTT MCP Integration
 
-A Model Context Protocol (MCP) server that bridges Foundry VTT game data with Claude Desktop, enabling natural AI-powered conversations about your game world.
+A Model Context Protocol (MCP) server that bridges Foundry VTT game data with Claude Desktop for AI-powered interactions your game world.
 
-## 🎯 Project Overview
 
-This project creates a seamless connection between Foundry VTT and Claude Desktop through the MCP protocol, allowing users to:
+
+These tools create a connection between Foundry VTT and Claude Desktop through the MCP protocol, allowing users to:
 
 - Ask Claude about character stats and abilities
 - Search through compendium data using natural language
 - Get scene information and world details
-- Access game data through AI-powered conversations
+- Access game data 
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 Claude Desktop ↔ MCP Protocol ↔ Foundry MCP Server ↔ WebSocket (31415) ↔ Foundry Module ↔ Foundry VTT Data
@@ -23,12 +23,12 @@ Claude Desktop ↔ MCP Protocol ↔ Foundry MCP Server ↔ WebSocket (31415) ↔
 - **Foundry Module** (`packages/foundry-module/`): Foundry VTT module that provides data access
 - **Shared Types** (`shared/`): Common TypeScript types and schemas
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
 - Node.js 18+ and npm 9+
-- Foundry VTT (v11+)
+- Foundry VTT (v13+)
 - Claude Desktop with MCP support
 
 ### Installation
@@ -84,48 +84,6 @@ foundry-mcp-integration/
 └── claude.md                    # Development context
 ```
 
-## 🛠️ Development
-
-### Available Scripts
-
-```bash
-# Development
-npm run dev              # Start MCP server in watch mode
-npm run build            # Build all packages
-npm run test             # Run tests
-
-# Code Quality
-npm run lint             # Lint all code
-npm run lint:fix         # Fix linting issues
-npm run format           # Format code with Prettier
-npm run typecheck        # Type check all packages
-
-# Utilities
-npm run clean            # Clean build artifacts
-```
-
-### Tech Stack
-
-- **MCP Server**: Node.js, TypeScript, @modelcontextprotocol/sdk, Socket.io, Winston, Zod
-- **Foundry Module**: JavaScript (ES6), Foundry API, Socket.io client
-- **Development**: Vitest, ESLint, Prettier, TypeScript
-
-## 🔧 Configuration
-
-### MCP Server (.env)
-
-```bash
-# Foundry connection
-FOUNDRY_HOST=localhost
-FOUNDRY_PORT=30000
-
-# Logging
-LOG_LEVEL=info
-
-# Development
-NODE_ENV=development
-```
-
 ### Foundry Module Settings
 
 Configure through Foundry VTT's Module Settings:
@@ -135,7 +93,7 @@ Configure through Foundry VTT's Module Settings:
 - **Data Access Permissions**: Control what data is accessible
 - **Debug Logging**: Enable detailed logging
 
-## 🎮 Usage Examples
+## Usage Examples
 
 Once configured, you can ask Claude questions like:
 
@@ -144,62 +102,34 @@ Once configured, you can ask Claude questions like:
 - "What tokens are in the current scene?"
 - "List all available compendium packs"
 
-## 🧪 Testing
-
-```bash
-# Run all tests
-npm test
-
-# Run tests with coverage
-npm run test:coverage
-
-# Run tests in watch mode
-npm run test:watch
-```
-
-## 📝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Run linting and tests
-6. Submit a pull request
-
-## 🔒 Security
+## Security
 
 - All data access is read-only by default
 - Permissions can be configured per data type
 - No external API keys or tokens required
 - Uses Foundry's built-in session authentication
 
-## 📄 License
+## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
 
-## 🆘 Support
+## Support
 
 - Create an issue for bugs or feature requests
-- Check the [docs/](docs/) directory for detailed documentation
-- Review [CLAUDE.md](CLAUDE.md) for development context
 
-## 🗺️ Roadmap
 
-### Phase 1 (MVP) ✅ COMPLETE & WORKING!
-- ✅ Character information retrieval - **DEPLOYED**
-- ✅ Compendium search functionality - **DEPLOYED**
-- ✅ Basic scene information - **DEPLOYED**
-- ✅ World information access - **DEPLOYED**
-- ✅ Read-only operations - **DEPLOYED**
-- ✅ **END-TO-END INTEGRATION WORKING** - Claude Desktop successfully queries live Foundry campaigns!
+## Roadmap
 
-### Phase 2 (Enhanced Features)
-- [ ] Real-time updates
-- [ ] Write operations (with permissions)
-- [ ] Advanced query capabilities
-- [ ] Combat state information
+### Phase 1 (MVP) COMPLETE
+- Character information retrieval
+- Compendium search functionality
+- Basic scene information 
+- World information access 
+- Read-only operations
+
+### Phase 2 
+- Compendium Write operations
 
 ### Phase 3 (Distribution)
 - [ ] Easy installation process
 - [ ] Community package distribution
-- [ ] Documentation and tutorials
