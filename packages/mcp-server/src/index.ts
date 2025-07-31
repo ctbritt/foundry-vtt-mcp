@@ -9,6 +9,7 @@ import { FoundryClient } from './foundry-client.js';
 import { CharacterTools } from './tools/character.js';
 import { CompendiumTools } from './tools/compendium.js';
 import { SceneTools } from './tools/scene.js';
+import { ActorCreationTools } from './tools/actor-creation.js';
 
 // Utility to log errors and exit gracefully without corrupting stdio
 async function logAndExit(logger: Logger, message: string, error: any): Promise<never> {
@@ -47,6 +48,7 @@ const foundryClient = new FoundryClient(config.foundry, logger);
 const characterTools = new CharacterTools({ foundryClient, logger });
 const compendiumTools = new CompendiumTools({ foundryClient, logger });
 const sceneTools = new SceneTools({ foundryClient, logger });
+const actorCreationTools = new ActorCreationTools({ foundryClient, logger });
 
 // Create MCP server
 const server = new Server(
@@ -66,6 +68,7 @@ const allTools = [
   ...characterTools.getToolDefinitions(),
   ...compendiumTools.getToolDefinitions(),
   ...sceneTools.getToolDefinitions(),
+  ...actorCreationTools.getToolDefinitions(),
 ];
 
 // Register tool list handler
@@ -121,6 +124,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         break;
       case 'get-world-info':
         result = await sceneTools.handleGetWorldInfo(args);
+        break;
+
+      // Phase 2: Actor creation tools
+      case 'create-actor-from-compendium':
+        result = await actorCreationTools.handleCreateActorFromCompendium(args);
+        break;
+      case 'get-compendium-entry-full':
+        result = await actorCreationTools.handleGetCompendiumEntryFull(args);
+        break;
+      case 'validate-actor-creation':
+        result = await actorCreationTools.handleValidateActorCreation(args);
         break;
 
       default:

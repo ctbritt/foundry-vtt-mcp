@@ -31,6 +31,12 @@ export class QueryHandlers {
     // Utility queries
     CONFIG.queries[`${modulePrefix}.ping`] = this.handlePing.bind(this);
 
+    // Phase 2: Write operation queries
+    CONFIG.queries[`${modulePrefix}.createActorFromCompendium`] = this.handleCreateActorFromCompendium.bind(this);
+    CONFIG.queries[`${modulePrefix}.getCompendiumDocumentFull`] = this.handleGetCompendiumDocumentFull.bind(this);
+    CONFIG.queries[`${modulePrefix}.addActorsToScene`] = this.handleAddActorsToScene.bind(this);
+    CONFIG.queries[`${modulePrefix}.validateWritePermissions`] = this.handleValidateWritePermissions.bind(this);
+
     console.log(`[${MODULE_ID}] Registered ${Object.keys(CONFIG.queries).filter(k => k.startsWith(modulePrefix)).length} query handlers`);
   }
 
@@ -169,5 +175,104 @@ export class QueryHandlers {
   isMethodRegistered(method: string): boolean {
     const queryKey = `${MODULE_ID}.${method}`;
     return queryKey in CONFIG.queries && typeof CONFIG.queries[queryKey] === 'function';
+  }
+
+  // ===== PHASE 2: WRITE OPERATION HANDLERS =====
+
+  /**
+   * Handle actor creation from compendium request
+   */
+  private async handleCreateActorFromCompendium(data: {
+    creatureType: string;
+    customNames?: string[] | undefined;
+    packPreference?: string | undefined;
+    quantity?: number | undefined;
+    addToScene?: boolean | undefined;
+  }): Promise<any> {
+    try {
+      this.dataAccess.validateFoundryState();
+
+      if (!data.creatureType) {
+        throw new Error('creatureType is required');
+      }
+
+      return await this.dataAccess.createActorFromCompendium({
+        creatureType: data.creatureType,
+        customNames: data.customNames,
+        packPreference: data.packPreference,
+        quantity: data.quantity || 1,
+        addToScene: data.addToScene || false,
+      });
+    } catch (error) {
+      throw new Error(`Failed to create actor from compendium: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Handle get compendium document full request
+   */
+  private async handleGetCompendiumDocumentFull(data: {
+    packId: string;
+    documentId: string;
+  }): Promise<any> {
+    try {
+      this.dataAccess.validateFoundryState();
+
+      if (!data.packId) {
+        throw new Error('packId is required');
+      }
+
+      if (!data.documentId) {
+        throw new Error('documentId is required');
+      }
+
+      return await this.dataAccess.getCompendiumDocumentFull(data.packId, data.documentId);
+    } catch (error) {
+      throw new Error(`Failed to get compendium document: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Handle add actors to scene request
+   */
+  private async handleAddActorsToScene(data: {
+    actorIds: string[];
+    placement?: 'random' | 'grid' | 'center';
+    hidden?: boolean;
+  }): Promise<any> {
+    try {
+      this.dataAccess.validateFoundryState();
+
+      if (!data.actorIds || !Array.isArray(data.actorIds) || data.actorIds.length === 0) {
+        throw new Error('actorIds array is required and must not be empty');
+      }
+
+      return await this.dataAccess.addActorsToScene({
+        actorIds: data.actorIds,
+        placement: data.placement || 'random',
+        hidden: data.hidden || false,
+      });
+    } catch (error) {
+      throw new Error(`Failed to add actors to scene: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Handle validate write permissions request
+   */
+  private async handleValidateWritePermissions(data: {
+    operation: 'createActor' | 'modifyScene';
+  }): Promise<any> {
+    try {
+      this.dataAccess.validateFoundryState();
+
+      if (!data.operation) {
+        throw new Error('operation is required');
+      }
+
+      return await this.dataAccess.validateWritePermissions(data.operation);
+    } catch (error) {
+      throw new Error(`Failed to validate write permissions: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 }

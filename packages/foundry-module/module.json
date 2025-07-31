@@ -1,8 +1,8 @@
 {
   "id": "foundry-mcp-bridge",
   "title": "Foundry MCP Bridge", 
-  "description": "Authenticated bridge module that connects Foundry VTT data to external MCP server for Claude Desktop integration",
-  "version": "0.1.5",
+  "description": "Authenticated bridge module that connects Foundry VTT data to external MCP server for Claude Desktop integration. Supports AI-powered actor creation, compendium search, and write operations with comprehensive permission system.",
+  "version": "0.2.0",
   "compatibility": {
     "minimum": "11",
     "verified": "13",

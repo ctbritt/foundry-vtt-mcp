@@ -91,7 +91,7 @@ export class ModuleSettings {
       },
     });
 
-    // Data Access Permissions
+    // Data Access Permissions (Read Operations)
     game.settings.register(this.moduleId, 'allowCharacterAccess', {
       name: 'foundry-mcp-bridge.settings.allowCharacterAccess.name',
       hint: 'foundry-mcp-bridge.settings.allowCharacterAccess.hint',
@@ -117,6 +117,57 @@ export class ModuleSettings {
       config: true,
       type: Boolean,
       default: false,
+    });
+
+    // AI Assistant Safety Controls (Phase 2)
+    game.settings.register(this.moduleId, 'allowActorCreation', {
+      name: 'foundry-mcp-bridge.settings.allowActorCreation.name',
+      hint: 'foundry-mcp-bridge.settings.allowActorCreation.hint',
+      scope: 'world',
+      config: true,
+      type: Boolean,
+      default: true, // Allow Claude to create actors from compendiums
+    });
+
+    game.settings.register(this.moduleId, 'allowSceneModification', {
+      name: 'foundry-mcp-bridge.settings.allowSceneModification.name',
+      hint: 'foundry-mcp-bridge.settings.allowSceneModification.hint',
+      scope: 'world',
+      config: true,
+      type: Boolean,
+      default: false, // Require explicit permission for scene changes
+    });
+
+    game.settings.register(this.moduleId, 'maxActorsPerRequest', {
+      name: 'foundry-mcp-bridge.settings.maxActorsPerRequest.name',
+      hint: 'foundry-mcp-bridge.settings.maxActorsPerRequest.hint',
+      scope: 'world',
+      config: true,
+      type: Number,
+      default: 5,
+      range: {
+        min: 1,
+        max: 10,
+        step: 1,
+      },
+    });
+
+    game.settings.register(this.moduleId, 'requireConfirmationForBulk', {
+      name: 'foundry-mcp-bridge.settings.requireConfirmationForBulk.name',
+      hint: 'foundry-mcp-bridge.settings.requireConfirmationForBulk.hint',
+      scope: 'world',
+      config: true,
+      type: Boolean,
+      default: false, // Optional confirmation for bulk operations
+    });
+
+    game.settings.register(this.moduleId, 'enableWriteAuditLog', {
+      name: 'foundry-mcp-bridge.settings.enableWriteAuditLog.name',
+      hint: 'foundry-mcp-bridge.settings.enableWriteAuditLog.hint',
+      scope: 'world',
+      config: true,
+      type: Boolean,
+      default: true, // Track Claude's actions for transparency
     });
 
     // Debug and Logging
@@ -178,6 +229,8 @@ export class ModuleSettings {
       'enabled', 'serverHost', 'serverPort', 'namespace',
       'connectionTimeout', 'reconnectAttempts', 'reconnectDelay',
       'allowCharacterAccess', 'allowCompendiumAccess', 'allowSceneAccess',
+      'allowActorCreation', 'allowSceneModification', 'maxActorsPerRequest',
+      'requireConfirmationForBulk', 'enableWriteAuditLog',
       'debugLogging'
     ];
 
@@ -257,6 +310,40 @@ export class ModuleSettings {
   /**
    * Create settings migration for version updates
    */
+  /**
+   * Get write operation permissions
+   */
+  getWritePermissions(): {
+    allowActorCreation: boolean;
+    allowSceneModification: boolean;
+    maxActorsPerRequest: number;
+    requireConfirmationForBulk: boolean;
+    enableWriteAuditLog: boolean;
+  } {
+    return {
+      allowActorCreation: this.getSetting('allowActorCreation'),
+      allowSceneModification: this.getSetting('allowSceneModification'),
+      maxActorsPerRequest: this.getSetting('maxActorsPerRequest'),
+      requireConfirmationForBulk: this.getSetting('requireConfirmationForBulk'),
+      enableWriteAuditLog: this.getSetting('enableWriteAuditLog'),
+    };
+  }
+
+  /**
+   * Check if Claude AI assistant is allowed to perform write operations
+   */
+  isWriteOperationAllowed(operation: 'createActor' | 'modifyScene'): boolean {
+    // Check safety settings configured by GM
+    switch (operation) {
+      case 'createActor':
+        return this.getSetting('allowActorCreation');
+      case 'modifyScene':
+        return this.getSetting('allowSceneModification');
+      default:
+        return false;
+    }
+  }
+
   migrateSettings(fromVersion: string, toVersion: string): void {
     console.log(`[${this.moduleId}] Migrating settings from ${fromVersion} to ${toVersion}`);
     
@@ -272,6 +359,8 @@ export class ModuleSettings {
       'enabled', 'serverHost', 'serverPort', 'namespace',
       'connectionTimeout', 'reconnectAttempts', 'reconnectDelay',
       'allowCharacterAccess', 'allowCompendiumAccess', 'allowSceneAccess',
+      'allowActorCreation', 'allowSceneModification', 'maxActorsPerRequest',
+      'requireConfirmationForBulk', 'enableWriteAuditLog',
       'debugLogging'
     ];
 
