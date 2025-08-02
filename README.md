@@ -120,16 +120,18 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Roadmap
 
-### Phase 1 (MVP) COMPLETE
+### Phase 1 COMPLETE
 - Character information retrieval
 - Compendium search functionality
 - Basic scene information 
 - World information access 
 - Read-only operations
 
-### Phase 2 
-- Compendium Write operations
+### Phase 2 IN PROGRESS
+- Monster and NPC Creation with exisitng Compendium creatures from prompts
+- Quest creation and journal updates from prompts
+- Dice rolls sent to users from prompts
 
-### Phase 3 (Distribution)
+### Phase 3 
 - [ ] Easy installation process
-- [ ] Community package distribution
+- [ ] Foundry package distribution
