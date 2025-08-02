@@ -242,12 +242,18 @@ export class FoundryDataAccess {
   async searchCompendium(query: string, packType?: string): Promise<CompendiumSearchResult[]> {
     this.checkPermission('allowCompendiumAccess');
 
-    if (!query || query.trim().length < 2) {
-      throw new Error('Search query must be at least 2 characters long');
+    // Add defensive checks for query parameter
+    if (!query || typeof query !== 'string' || query.trim().length < 2) {
+      throw new Error('Search query must be a string with at least 2 characters');
     }
 
     const results: CompendiumSearchResult[] = [];
-    const searchTerms = query.toLowerCase().split(' ').filter(term => term.length > 0);
+    const cleanQuery = query.toLowerCase().trim();
+    const searchTerms = cleanQuery.split(' ').filter(term => term && typeof term === 'string' && term.length > 0);
+
+    if (searchTerms.length === 0) {
+      throw new Error('Search query must contain valid search terms');
+    }
 
     // Filter packs by type if specified
     const packs = Array.from(game.packs.values()).filter(pack => {
@@ -266,20 +272,41 @@ export class FoundryDataAccess {
 
         // Search through pack entries
         for (const entry of pack.index.values()) {
-          const nameMatch = searchTerms.every(term => 
-            entry.name.toLowerCase().includes(term)
-          );
+          try {
+            // Add comprehensive safety checks for entry properties
+            if (!entry || !entry.name || typeof entry.name !== 'string' || entry.name.trim().length === 0) {
+              continue;
+            }
 
-          if (nameMatch) {
-            results.push({
-              id: entry._id,
-              name: entry.name,
-              type: entry.type,
-              img: entry.img || undefined,
-              pack: pack.metadata.id,
-              packLabel: pack.metadata.label,
-              system: entry.system ? this.sanitizeData(entry.system) : undefined,
+            // Ensure searchTerms are valid before using them
+            if (!searchTerms || !Array.isArray(searchTerms) || searchTerms.length === 0) {
+              continue;
+            }
+
+            // Safe name matching with additional null checks
+            const entryNameLower = entry.name.toLowerCase();
+            const nameMatch = searchTerms.every(term => {
+              if (!term || typeof term !== 'string') {
+                return false;
+              }
+              return entryNameLower.includes(term);
             });
+
+            if (nameMatch) {
+              results.push({
+                id: entry._id || '',
+                name: entry.name,
+                type: entry.type || 'unknown',
+                img: entry.img || undefined,
+                pack: pack.metadata.id,
+                packLabel: pack.metadata.label,
+                system: entry.system ? this.sanitizeData(entry.system) : undefined,
+              });
+            }
+          } catch (entryError) {
+            // Log individual entry errors but continue processing
+            console.warn(`[${this.moduleId}] Error processing entry in pack ${pack.metadata.id}:`, entryError);
+            continue;
           }
 
           // Limit results per pack to prevent overwhelming responses
@@ -521,7 +548,140 @@ export class FoundryDataAccess {
     }
   }
 
-  // ===== PHASE 2: WRITE OPERATIONS =====
+  // ===== PHASE 2 & 3: WRITE OPERATIONS =====
+
+  /**
+   * Create journal entry for quests
+   */
+  async createJournalEntry(request: { name: string; content: string }): Promise<{ id: string; name: string }> {
+    this.validateFoundryState();
+
+    // Use permission system for journal creation
+    const permissionCheck = permissionManager.checkWritePermission('createActor', {
+      quantity: 1, // Treat journal creation similar to actor creation for permissions
+    });
+
+    if (!permissionCheck.allowed) {
+      throw new Error(`Journal creation denied: ${permissionCheck.reason}`);
+    }
+
+    try {
+      // Create journal entry with proper Foundry v13 structure
+      const journalData = {
+        name: request.name,
+        pages: [{
+          type: 'text',
+          name: request.name,
+          text: {
+            content: request.content
+          }
+        }],
+        ownership: { default: 0 } // GM only by default
+      };
+
+      const journal = await JournalEntry.create(journalData);
+      
+      if (!journal) {
+        throw new Error('Failed to create journal entry');
+      }
+
+      const result = {
+        id: journal.id,
+        name: journal.name || request.name,
+      };
+
+      this.auditLog('createJournalEntry', request, 'success');
+      return result;
+
+    } catch (error) {
+      this.auditLog('createJournalEntry', request, 'failure', error instanceof Error ? error.message : 'Unknown error');
+      throw error;
+    }
+  }
+
+  /**
+   * List all journal entries
+   */
+  async listJournals(): Promise<Array<{ id: string; name: string; type: string }>> {
+    this.validateFoundryState();
+
+    return game.journal.map((journal: any) => ({
+      id: journal.id || '',
+      name: journal.name || '',
+      type: 'JournalEntry',
+    }));
+  }
+
+  /**
+   * Get journal entry content
+   */
+  async getJournalContent(journalId: string): Promise<{ content: string } | null> {
+    this.validateFoundryState();
+
+    const journal = game.journal.get(journalId);
+    if (!journal) {
+      return null;
+    }
+
+    // Get first text page content
+    const firstPage = journal.pages.find((page: any) => page.type === 'text');
+    if (!firstPage) {
+      return { content: '' };
+    }
+
+    return {
+      content: firstPage.text?.content || '',
+    };
+  }
+
+  /**
+   * Update journal entry content
+   */
+  async updateJournalContent(request: { journalId: string; content: string }): Promise<{ success: boolean }> {
+    this.validateFoundryState();
+
+    // Use permission system for journal updates
+    const permissionCheck = permissionManager.checkWritePermission('createActor', {
+      quantity: 1, // Treat journal updates similar to actor creation for permissions
+    });
+
+    if (!permissionCheck.allowed) {
+      throw new Error(`Journal update denied: ${permissionCheck.reason}`);
+    }
+
+    try {
+      const journal = game.journal.get(request.journalId);
+      if (!journal) {
+        throw new Error('Journal entry not found');
+      }
+
+      // Update first text page or create one if none exists
+      const firstPage = journal.pages.find((page: any) => page.type === 'text');
+      
+      if (firstPage) {
+        // Update existing page
+        await firstPage.update({
+          'text.content': request.content,
+        });
+      } else {
+        // Create new text page
+        await journal.createEmbeddedDocuments('JournalEntryPage', [{
+          type: 'text',
+          name: journal.name,
+          text: {
+            content: request.content,
+          },
+        }]);
+      }
+
+      this.auditLog('updateJournalContent', request, 'success');
+      return { success: true };
+
+    } catch (error) {
+      this.auditLog('updateJournalContent', request, 'failure', error instanceof Error ? error.message : 'Unknown error');
+      throw error;
+    }
+  }
 
   /**
    * Create actors from compendium entries with custom names

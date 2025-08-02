@@ -10,6 +10,7 @@ import { CharacterTools } from './tools/character.js';
 import { CompendiumTools } from './tools/compendium.js';
 import { SceneTools } from './tools/scene.js';
 import { ActorCreationTools } from './tools/actor-creation.js';
+import { QuestCreationTools } from './tools/quest-creation.js';
 
 // Utility to log errors and exit gracefully without corrupting stdio
 async function logAndExit(logger: Logger, message: string, error: any): Promise<never> {
@@ -37,7 +38,7 @@ const logger = new Logger({
   level: config.logLevel,
   format: config.logFormat,
   enableConsole: false, // Disabled for MCP stdio communication
-  enableFile: true, // Always enable file logging for debugging
+  enableFile: false, // Disabled for performance - use only for debugging
   filePath: 'logs/mcp-server.log', // Fixed log file path
 });
 
@@ -49,6 +50,7 @@ const characterTools = new CharacterTools({ foundryClient, logger });
 const compendiumTools = new CompendiumTools({ foundryClient, logger });
 const sceneTools = new SceneTools({ foundryClient, logger });
 const actorCreationTools = new ActorCreationTools({ foundryClient, logger });
+const questCreationTools = new QuestCreationTools({ foundryClient, logger });
 
 // Create MCP server
 const server = new Server(
@@ -69,11 +71,12 @@ const allTools = [
   ...compendiumTools.getToolDefinitions(),
   ...sceneTools.getToolDefinitions(),
   ...actorCreationTools.getToolDefinitions(),
+  ...questCreationTools.getToolDefinitions(),
 ];
 
 // Register tool list handler
 server.setRequestHandler(ListToolsRequestSchema, async () => {
-  logger.debug('Listing available tools', { count: allTools.length });
+  logger.debug('Listing available tools');
   return { tools: allTools };
 });
 
@@ -81,18 +84,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
   
-  logger.info('Executing tool', { toolName: name, args });
+  // Reduced logging for performance - only log tool name
 
   try {
-    // For MVP mode: Try to connect if not ready, or use mock data
+    // Check connection status without excessive reconnection attempts
     if (!foundryClient.isReady()) {
-      logger.info('Foundry not connected, attempting connection for tool execution');
-      try {
-        await foundryClient.connect();
-      } catch (error) {
-        logger.warn('Failed to connect to Foundry, using mock data mode', error);
-        // Continue with mock data - don't throw error
-      }
+      logger.debug('Foundry not connected for tool execution');
+      // Don't attempt reconnection on every tool call - this causes lag
+      // Connection should be established during startup
     }
 
     let result: any;
@@ -137,17 +136,37 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         result = await actorCreationTools.handleValidateActorCreation(args);
         break;
 
+      // Phase 3: Quest creation tools
+      case 'create-quest-journal':
+        result = await questCreationTools.handleCreateQuestJournal(args);
+        break;
+      case 'link-quest-to-npc':
+        result = await questCreationTools.handleLinkQuestToNPC(args);
+        break;
+      case 'analyze-campaign-context':
+        result = await questCreationTools.handleAnalyzeCampaignContext(args);
+        break;
+      case 'update-quest-journal':
+        result = await questCreationTools.handleUpdateQuestJournal(args);
+        break;
+      case 'list-journals':
+        result = await questCreationTools.handleListJournals(args);
+        break;
+      case 'search-journals':
+        result = await questCreationTools.handleSearchJournals(args);
+        break;
+
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
 
-    logger.debug('Tool execution completed successfully', { toolName: name });
+    // Tool execution completed successfully - only log errors/warnings
 
     return {
       content: [
         {
           type: 'text',
-          text: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
+          text: typeof result === 'string' ? result : JSON.stringify(result),
         },
       ],
     };
@@ -188,20 +207,12 @@ async function main(): Promise<void> {
       toolsAvailable: allTools.length,
     });
 
-    // Log available tools for debugging
-    logger.debug('Available tools', {
-      tools: allTools.map(tool => ({
-        name: tool.name,
-        description: tool.description,
-      })),
-    });
+    // Log available tools count only for debugging
+    logger.debug(`Available tools: ${allTools.length} registered`);
 
     // Start WebSocket server for Foundry VTT (non-blocking)
-    logger.info('Starting WebSocket server for Foundry VTT connections...');
-    foundryClient.connect().then(() => {
-      logger.info('WebSocket server started, waiting for Foundry VTT module to connect');
-    }).catch((error) => {
-      logger.warn('Failed to start WebSocket server (will retry when tools are used)', error);
+    foundryClient.connect().catch(() => {
+      // Silent failure - WebSocket server will be available when needed
     });
 
   } catch (error) {

@@ -31,11 +31,15 @@ export class QueryHandlers {
     // Utility queries
     CONFIG.queries[`${modulePrefix}.ping`] = this.handlePing.bind(this);
 
-    // Phase 2: Write operation queries
+    // Phase 2 & 3: Write operation queries
     CONFIG.queries[`${modulePrefix}.createActorFromCompendium`] = this.handleCreateActorFromCompendium.bind(this);
     CONFIG.queries[`${modulePrefix}.getCompendiumDocumentFull`] = this.handleGetCompendiumDocumentFull.bind(this);
     CONFIG.queries[`${modulePrefix}.addActorsToScene`] = this.handleAddActorsToScene.bind(this);
     CONFIG.queries[`${modulePrefix}.validateWritePermissions`] = this.handleValidateWritePermissions.bind(this);
+    CONFIG.queries[`${modulePrefix}.createJournalEntry`] = this.handleCreateJournalEntry.bind(this);
+    CONFIG.queries[`${modulePrefix}.listJournals`] = this.handleListJournals.bind(this);
+    CONFIG.queries[`${modulePrefix}.getJournalContent`] = this.handleGetJournalContent.bind(this);
+    CONFIG.queries[`${modulePrefix}.updateJournalContent`] = this.handleUpdateJournalContent.bind(this);
 
     console.log(`[${MODULE_ID}] Registered ${Object.keys(CONFIG.queries).filter(k => k.startsWith(modulePrefix)).length} query handlers`);
   }
@@ -99,8 +103,13 @@ export class QueryHandlers {
     try {
       this.dataAccess.validateFoundryState();
 
-      if (!data.query) {
-        throw new Error('query parameter is required');
+      // Add better parameter validation
+      if (!data || typeof data !== 'object') {
+        throw new Error('Invalid data parameter structure');
+      }
+
+      if (!data.query || typeof data.query !== 'string') {
+        throw new Error('query parameter is required and must be a string');
       }
 
       return await this.dataAccess.searchCompendium(data.query, data.packType);
@@ -273,6 +282,79 @@ export class QueryHandlers {
       return await this.dataAccess.validateWritePermissions(data.operation);
     } catch (error) {
       throw new Error(`Failed to validate write permissions: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Handle journal entry creation
+   */
+  async handleCreateJournalEntry(data: any): Promise<any> {
+    try {
+      if (!data.name) {
+        throw new Error('name is required');
+      }
+      if (!data.content) {
+        throw new Error('content is required');
+      }
+
+      return await this.dataAccess.createJournalEntry({
+        name: data.name,
+        content: data.content,
+      });
+    } catch (error) {
+      throw new Error(`Failed to create journal entry: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Handle list journals request
+   */
+  async handleListJournals(): Promise<any> {
+    try {
+      this.dataAccess.validateFoundryState();
+      return await this.dataAccess.listJournals();
+    } catch (error) {
+      throw new Error(`Failed to list journals: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Handle get journal content request
+   */
+  async handleGetJournalContent(data: { journalId: string }): Promise<any> {
+    try {
+      this.dataAccess.validateFoundryState();
+
+      if (!data.journalId) {
+        throw new Error('journalId is required');
+      }
+
+      return await this.dataAccess.getJournalContent(data.journalId);
+    } catch (error) {
+      throw new Error(`Failed to get journal content: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Handle update journal content request
+   */
+  async handleUpdateJournalContent(data: { journalId: string; content: string }): Promise<any> {
+    try {
+      this.dataAccess.validateFoundryState();
+
+      if (!data.journalId) {
+        throw new Error('journalId is required');
+      }
+      if (!data.content) {
+        throw new Error('content is required');
+      }
+
+      return await this.dataAccess.updateJournalContent({
+        journalId: data.journalId,
+        content: data.content,
+      });
+    } catch (error) {
+      throw new Error(`Failed to update journal content: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 }

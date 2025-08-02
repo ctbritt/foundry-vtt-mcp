@@ -86,9 +86,33 @@ export class CompendiumTools {
       limit: z.number().min(1).max(50).default(20),
     });
 
-    const { query, packType, limit } = schema.parse(args);
+    // Add defensive parsing for MCP argument structure inconsistencies
+    let parsedArgs;
+    try {
+      parsedArgs = schema.parse(args);
+    } catch (zodError) {
+      // Try alternative argument structures that MCP might send
+      if (typeof args === 'string') {
+        parsedArgs = schema.parse({ query: args });
+      } else if (args && typeof args.query === 'undefined' && typeof args === 'object') {
+        // Handle case where arguments might be nested differently
+        const firstKey = Object.keys(args)[0];
+        if (firstKey && typeof args[firstKey] === 'string') {
+          parsedArgs = schema.parse({ query: args[firstKey] });
+        } else {
+          throw zodError;
+        }
+      } else {
+        // Log the problematic args for debugging
+        this.logger.debug('Failed to parse search args, using fallback', { 
+          args: typeof args === 'object' ? JSON.stringify(args) : args,
+          error: zodError instanceof Error ? zodError.message : 'Unknown parsing error'
+        });
+        throw zodError;
+      }
+    }
 
-    this.logger.info('Searching compendium', { query, packType, limit });
+    const { query, packType, limit } = parsedArgs;
 
     try {
       const results = await this.foundryClient.query('foundry-mcp-bridge.searchCompendium', {
@@ -127,30 +151,36 @@ export class CompendiumTools {
 
     const { packId, itemId } = schema.parse(args);
 
-    this.logger.info('Getting compendium item details', { packId, itemId });
-
     try {
-      // For now, we'll use the search functionality to find the item
-      // In a more advanced implementation, we could add a specific query for this
-      const searchResults = await this.foundryClient.query('foundry-mcp-bridge.searchCompendium', {
-        query: itemId, // Search by ID
+      // Use the proper document retrieval method that already exists in actor creation
+      const item = await this.foundryClient.query('foundry-mcp-bridge.getCompendiumDocumentFull', {
+        packId: packId,
+        documentId: itemId,
       });
-
-      const item = searchResults.find((result: any) => 
-        result.id === itemId && result.pack === packId
-      );
 
       if (!item) {
         throw new Error(`Item ${itemId} not found in pack ${packId}`);
       }
 
-      this.logger.debug('Successfully retrieved compendium item', { 
-        packId, 
-        itemId, 
-        itemName: item.name 
-      });
-
-      return this.formatDetailedCompendiumItem(item);
+      // Format the response using the detailed item data
+      return {
+        id: item.id,
+        name: item.name,
+        type: item.type,
+        pack: {
+          id: item.pack,
+          label: item.packLabel,
+        },
+        description: this.extractDescription(item),
+        fullDescription: this.extractFullDescription(item),
+        system: this.sanitizeSystemData(item.system || {}),
+        properties: this.extractItemProperties(item),
+        items: item.items || [],
+        effects: item.effects || [],
+        hasImage: !!item.img,
+        imageUrl: item.img,
+        fullData: item.fullData,
+      };
 
     } catch (error) {
       this.logger.error('Failed to get compendium item', error);

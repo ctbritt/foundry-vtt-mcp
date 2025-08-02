@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const ConfigSchema = z.object({
-  logLevel: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
+  logLevel: z.enum(['error', 'warn', 'info', 'debug']).default('warn'),
   logFormat: z.enum(['json', 'simple']).default('simple'),
   enableFileLogging: z.boolean().default(false),
   logFilePath: z.string().optional(),
@@ -25,7 +25,7 @@ const ConfigSchema = z.object({
 export type Config = z.infer<typeof ConfigSchema>;
 
 const rawConfig = {
-  logLevel: process.env.LOG_LEVEL || 'info',
+  logLevel: process.env.LOG_LEVEL || 'warn',
   logFormat: process.env.LOG_FORMAT || 'simple',
   enableFileLogging: process.env.ENABLE_FILE_LOGGING === 'true',
   logFilePath: process.env.LOG_FILE_PATH,
