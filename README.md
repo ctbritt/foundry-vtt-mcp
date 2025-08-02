@@ -1,15 +1,17 @@
 # Foundry VTT MCP Integration
 
-A Model Context Protocol (MCP) server that bridges Foundry VTT game data with Claude Desktop for AI-powered interactions your game world.
+A Model Context Protocol (MCP) server that bridges Foundry VTT game data with Claude Desktop for AI-powered interactions. 
 
-
+This project was made using Claude Code, Claude Dekstop, my basic knowledge of typescript, and my project management skillset. 
 
 These tools create a connection between Foundry VTT and Claude Desktop through the MCP protocol, allowing users to:
 
 - Ask Claude about character stats and abilities
 - Search through compendium data using natural language
 - Get scene information and world details
-- Access game data 
+- Access game data
+- Create Quests in Journal from prompts
+- Update Journal
 
 ## Architecture
 
@@ -95,17 +97,17 @@ Configure through Foundry VTT's Module Settings:
 
 ## Usage Examples
 
-Once configured, you can ask Claude questions like:
+Once configured, you can ask ask Claude Desktop to:
 
 - "Show me my character Aragorn's stats"
 - "Find all fire spells in the compendiums"
 - "What tokens are in the current scene?"
 - "List all available compendium packs"
+- "Create me a quest where quest in Foundry about an evil "tomatomancer" called Erin Delly, his stat block should be a necromancer but flavour him so that Erin is actually a plant themed antagonist. He uses his powers to summon tomato golems. Find an appropriate stat block to suit the tomato golems. Make an intersting story and plot hook"
 
 ## Security
 
-- All data access is read-only by default
-- Permissions can be configured per data type
+- Permissions can be configured to restrict access per data type in the Foundry MCP Bridge module settings
 - No external API keys or tokens required
 - Uses Foundry's built-in session authentication
 
@@ -120,16 +122,18 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Roadmap
 
-### Phase 1 (MVP) COMPLETE
+### Phase 1 COMPLETE
 - Character information retrieval
 - Compendium search functionality
 - Basic scene information 
 - World information access 
 - Read-only operations
 
-### Phase 2 
-- Compendium Write operations
+### Phase 2 IN PROGRESS
+- Monster and NPC Creation with exisitng Compendium creatures from prompts
+- Quest creation and journal updates from prompts
+- Dice rolls sent to users from prompts
 
-### Phase 3 (Distribution)
+### Phase 3 
 - [ ] Easy installation process
-- [ ] Community package distribution
+- [ ] Foundry package distribution
