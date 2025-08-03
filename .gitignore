@@ -66,4 +66,12 @@ modules/
 
 # Test files
 test-results/
-test-reports/CLAUDE.md
+test-reports/
+
+# Claude Code local settings (should not be shared)
+.claude/settings.local.json
+.claude/settings.*.json
+*.local.md
+
+# Session files (temporary notes)
+README-NEXT-SESSION-*.md
