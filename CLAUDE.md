@@ -32,8 +32,8 @@ Logging: Winston structured logging
 Validation: Zod schema validation
 
 Current State
-Last Updated: August 2, 2025 - Phase 4 Complete + Roll Tool Consolidation ✅
-Project Status: Version 0.3.0 - Unified Dice Roll System
+Last Updated: August 3, 2025 - Version 0.3.1 GM Security Implementation ✅
+Project Status: Version 0.3.1 - GM-Only Security Implementation
 
 Phase 1 MVP - COMPLETE ✅
 
@@ -123,6 +123,45 @@ Phase 4: Interactive Dice Roll System - COMPLETE ✅
 - Fixed all TypeScript compilation errors and rebuilt both packages successfully
 
 📊 CURRENT TOOL COUNT: 16 total MCP tools (Phase 1: 7, Phase 2: 3, Phase 3: 6)
+
+## 🚀 AUGUST 3, 2025 SESSION - VERSION 0.3.1 GM SECURITY RELEASE:
+
+### 🔒 **CRITICAL SECURITY IMPLEMENTATION COMPLETE**
+**Status:** Production-ready GM-only access control implemented
+**Impact:** MCP bridge now completely restricted to Game Master users
+
+### 🛡️ **Security Features Implemented:**
+
+1. **Module-Level GM Validation** - `packages/foundry-module/src/main.ts`
+   - Silent GM check: `isGMUser(): boolean` 
+   - Module startup restricted to GM users only
+   - Non-GM users see no error messages, just access restriction log
+
+2. **Query Handler Security** - `packages/foundry-module/src/queries.ts`
+   - **All 14 query handlers** now protected with `validateGMAccess()`
+   - Silent failure pattern: Returns `{ error: 'Access denied', success: false }`
+   - Zero notifications or error messages for non-GM users
+
+3. **GM Status Notifications** - Enhanced user experience
+   - Connection banner: "🔗 MCP Bridge connected successfully (GM only)"
+   - Clear GM identification in console logs
+   - Professional status messaging for authorized users
+
+### 🎯 **Security Architecture:**
+```typescript
+// Applied to all 14 query handlers:
+const gmCheck = this.validateGMAccess();
+if (!gmCheck.allowed) {
+  return { error: 'Access denied', success: false };
+}
+```
+
+### ✅ **Version 0.3.1 Achievements:**
+- **Complete Security Coverage:** All MCP functionality GM-restricted
+- **Silent Failures:** Non-GM users experience no errors or notifications  
+- **Performance Optimized:** Early validation checks with minimal overhead
+- **User Experience:** Clear GM-only messaging for authorized access
+- **Production Ready:** Comprehensive access control foundation established
 
 ## ⚠️ CRITICAL STATUS - August 2, 2025 Session Issues
 
@@ -294,7 +333,7 @@ Phase 1-3 COMPLETE - All Success Criteria Met ✅
 **Development Process Metrics:**
 ✅ Regular git commits with clear messages and proper versioning
 ✅ Claude.md maintained throughout development with session continuity
-✅ Version 0.3.0 released with critical bug fixes and performance improvements
+✅ Version 0.3.1 released with complete GM-only security implementation
 ✅ All packages build successfully with TypeScript strict mode
 
 **Phase 4 Goals:**
