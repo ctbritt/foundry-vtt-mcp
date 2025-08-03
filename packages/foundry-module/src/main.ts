@@ -18,6 +18,13 @@ class FoundryMCPBridge {
   }
 
   /**
+   * Check if current user is a GM (silent check for security)
+   */
+  private isGMUser(): boolean {
+    return game.user?.isGM || false;
+  }
+
+  /**
    * Initialize the module during Foundry's init hook
    */
   async initialize(): Promise<void> {
@@ -45,6 +52,12 @@ class FoundryMCPBridge {
    */
   async onReady(): Promise<void> {
     try {
+      // SECURITY: Silent GM-only check - non-GM users get no access and no messages
+      if (!this.isGMUser()) {
+        console.log(`[${MODULE_ID}] Module ready (user access restricted)`);
+        return;
+      }
+
       console.log(`[${MODULE_ID}] Foundry ready, checking bridge status...`);
 
       // Validate settings
@@ -74,6 +87,12 @@ class FoundryMCPBridge {
       throw new Error('Module not initialized');
     }
 
+    // SECURITY: Double-check GM access (safety measure)
+    if (!this.isGMUser()) {
+      console.warn(`[${MODULE_ID}] Attempted to start bridge without GM access`);
+      return;
+    }
+
     if (this.socketBridge?.isConnected()) {
       console.log(`[${MODULE_ID}] Bridge already running`);
       return;
@@ -97,7 +116,10 @@ class FoundryMCPBridge {
       await this.settings.setSetting('lastConnectionState', 'connected');
       
       console.log(`[${MODULE_ID}] Bridge started successfully`);
-      ui.notifications.info('MCP Bridge connected successfully');
+      
+      // Show GM-specific status banner
+      ui.notifications.info('🔗 MCP Bridge connected successfully (GM only)');
+      console.log(`[${MODULE_ID}] GM connection established - Bridge active for user: ${game.user?.name}`);
 
     } catch (error) {
       console.error(`[${MODULE_ID}] Failed to start bridge:`, error);

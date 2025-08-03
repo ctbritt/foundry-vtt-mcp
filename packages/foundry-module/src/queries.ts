@@ -9,6 +9,17 @@ export class QueryHandlers {
   }
 
   /**
+   * SECURITY: Validate GM access - returns silent failure for non-GM users
+   */
+  private validateGMAccess(): { allowed: boolean; error?: any } {
+    if (!game.user?.isGM) {
+      // Silent failure - no error message for non-GM users
+      return { allowed: false };
+    }
+    return { allowed: true };
+  }
+
+  /**
    * Register all query handlers in CONFIG.queries
    */
   registerHandlers(): void {
@@ -63,6 +74,12 @@ export class QueryHandlers {
    */
   private async handleGetCharacterInfo(data: { characterName?: string; characterId?: string }): Promise<any> {
     try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
       this.dataAccess.validateFoundryState();
 
       const identifier = data.characterName || data.characterId;
@@ -81,6 +98,12 @@ export class QueryHandlers {
    */
   private async handleListActors(data: { type?: string }): Promise<any> {
     try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
       this.dataAccess.validateFoundryState();
 
       const actors = await this.dataAccess.listActors();
@@ -101,6 +124,12 @@ export class QueryHandlers {
    */
   private async handleSearchCompendium(data: { query: string; packType?: string }): Promise<any> {
     try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
       this.dataAccess.validateFoundryState();
 
       // Add better parameter validation
@@ -123,6 +152,12 @@ export class QueryHandlers {
    */
   private async handleGetAvailablePacks(): Promise<any> {
     try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
       this.dataAccess.validateFoundryState();
       return await this.dataAccess.getAvailablePacks();
     } catch (error) {
@@ -135,6 +170,12 @@ export class QueryHandlers {
    */
   private async handleGetActiveScene(): Promise<any> {
     try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
       this.dataAccess.validateFoundryState();
       return await this.dataAccess.getActiveScene();
     } catch (error) {
@@ -147,6 +188,12 @@ export class QueryHandlers {
    */
   private async handleGetWorldInfo(): Promise<any> {
     try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
       this.dataAccess.validateFoundryState();
       return await this.dataAccess.getWorldInfo();
     } catch (error) {
@@ -199,6 +246,12 @@ export class QueryHandlers {
     addToScene?: boolean | undefined;
   }): Promise<any> {
     try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
       this.dataAccess.validateFoundryState();
 
       if (!data.creatureType) {
@@ -225,6 +278,12 @@ export class QueryHandlers {
     documentId: string;
   }): Promise<any> {
     try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
       this.dataAccess.validateFoundryState();
 
       if (!data.packId) {
@@ -250,6 +309,12 @@ export class QueryHandlers {
     hidden?: boolean;
   }): Promise<any> {
     try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
       this.dataAccess.validateFoundryState();
 
       if (!data.actorIds || !Array.isArray(data.actorIds) || data.actorIds.length === 0) {
@@ -273,6 +338,12 @@ export class QueryHandlers {
     operation: 'createActor' | 'modifyScene';
   }): Promise<any> {
     try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
       this.dataAccess.validateFoundryState();
 
       if (!data.operation) {
@@ -290,6 +361,12 @@ export class QueryHandlers {
    */
   async handleCreateJournalEntry(data: any): Promise<any> {
     try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
       if (!data.name) {
         throw new Error('name is required');
       }
@@ -311,6 +388,12 @@ export class QueryHandlers {
    */
   async handleListJournals(): Promise<any> {
     try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
       this.dataAccess.validateFoundryState();
       return await this.dataAccess.listJournals();
     } catch (error) {
@@ -323,6 +406,12 @@ export class QueryHandlers {
    */
   async handleGetJournalContent(data: { journalId: string }): Promise<any> {
     try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
       this.dataAccess.validateFoundryState();
 
       if (!data.journalId) {
@@ -340,6 +429,12 @@ export class QueryHandlers {
    */
   async handleUpdateJournalContent(data: { journalId: string; content: string }): Promise<any> {
     try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
       this.dataAccess.validateFoundryState();
 
       if (!data.journalId) {
