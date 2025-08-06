@@ -1048,4 +1048,463 @@ export class FoundryDataAccess {
       ...(permissionCheck.warnings ? { warnings: permissionCheck.warnings } : {}),
     };
   }
+
+  /**
+   * Request player rolls - creates interactive roll buttons in chat
+   */
+  async requestPlayerRolls(data: {
+    rollType: string;
+    rollTarget: string;
+    targetPlayer: string;
+    isPublic: boolean;
+    rollModifier: string;
+    flavor: string;
+  }): Promise<{ success: boolean; message: string; error?: string }> {
+    this.validateFoundryState();
+
+    try {
+      // Resolve target player from character name or player name
+      const playerInfo = this.resolveTargetPlayer(data.targetPlayer);
+      if (!playerInfo.found) {
+        return {
+          success: false,
+          message: '',
+          error: `Could not find player or character: ${data.targetPlayer}`
+        };
+      }
+
+      // Build roll formula based on type and target
+      const rollFormula = this.buildRollFormula(data.rollType, data.rollTarget, data.rollModifier, playerInfo.character);
+      
+      // Generate roll button HTML
+      const buttonId = foundry.utils.randomID();
+      const buttonLabel = this.buildRollButtonLabel(data.rollType, data.rollTarget, data.isPublic);
+      
+      // Debug logging for button creation
+      console.log(`[${MODULE_ID}] Creating roll button:`, {
+        buttonId,
+        buttonLabel,
+        targetPlayer: data.targetPlayer,
+        resolvedPlayerName: playerInfo.targetName,
+        resolvedUserId: playerInfo.user?.id,
+        characterName: playerInfo.character?.name,
+        characterId: playerInfo.character?.id,
+        isPublic: data.isPublic
+      });
+      
+      const rollButtonHtml = `
+        <div class="mcp-roll-request" style="margin: 10px 0; padding: 10px; border: 1px solid #ccc; border-radius: 5px; background: #f9f9f9;">
+          <p><strong>Roll Request:</strong> ${buttonLabel}</p>
+          <p><strong>Target:</strong> ${playerInfo.targetName} ${playerInfo.character ? `(${playerInfo.character.name})` : ''}</p>
+          ${data.flavor ? `<p><strong>Context:</strong> ${data.flavor}</p>` : ''}
+          
+          <!-- Single Roll Button (clickable by both character owner and GM) -->
+          <button class="mcp-roll-button" 
+                  data-button-id="${buttonId}"
+                  data-roll-formula="${rollFormula}"
+                  data-roll-label="${buttonLabel}"
+                  data-is-public="${data.isPublic}"
+                  data-character-id="${playerInfo.character?.id || ''}"
+                  data-target-user-id="${playerInfo.user?.id || ''}"
+                  style="background: #4CAF50; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;">
+            🎲 ${buttonLabel}
+          </button>
+        </div>
+      `;
+
+      // Create chat message with roll button
+      // For PUBLIC rolls: both roll request and results visible to all players
+      // For PRIVATE rolls: both roll request and results visible to target player + GM only
+      const whisperTargets: string[] = [];
+      
+      if (!data.isPublic) {
+        // Private roll request: whisper to target player + GM only
+        console.log(`[${MODULE_ID}] Creating PRIVATE roll request - visible to target + GM only`);
+        
+        // Always whisper to the character owner if they exist
+        if (playerInfo.user?.id) {
+          whisperTargets.push(playerInfo.user.id);
+        }
+        
+        // Also send to GM (GMs can see all whispered messages anyway, but this ensures they see it)
+        const gmUsers = game.users?.filter((u: User) => u.isGM && u.active);
+        if (gmUsers) {
+          for (const gm of gmUsers) {
+            if (gm.id && !whisperTargets.includes(gm.id)) {
+              whisperTargets.push(gm.id);
+            }
+          }
+        }
+      } else {
+        // Public roll request: visible to all players (empty whisperTargets array)
+        console.log(`[${MODULE_ID}] Creating PUBLIC roll request - visible to all players`);
+      }
+      
+      const messageData = {
+        content: rollButtonHtml,
+        speaker: ChatMessage.getSpeaker({ actor: game.user }),
+        type: CONST.CHAT_MESSAGE_TYPES.OTHER,
+        whisper: whisperTargets,
+      };
+
+      await ChatMessage.create(messageData);
+
+      // Note: Click handlers are attached globally via renderChatMessage hook in init()
+      // This ensures all users get the handlers when they see the message
+
+      return {
+        success: true,
+        message: `Roll request sent to ${playerInfo.targetName}. ${data.isPublic ? 'Public roll' : 'Private roll'} button created in chat.`
+      };
+
+    } catch (error) {
+      console.error(`[${MODULE_ID}] Error creating roll request:`, error);
+      return {
+        success: false,
+        message: '',
+        error: error instanceof Error ? error.message : 'Unknown error creating roll request'
+      };
+    }
+  }
+
+  /**
+   * Resolve target player from character name or player name
+   * Supports partial matching and case-insensitive search
+   */
+  private resolveTargetPlayer(targetPlayer: string): {
+    found: boolean;
+    user?: User;
+    character?: Actor;
+    targetName: string;
+  } {
+    const searchTerm = targetPlayer.toLowerCase().trim();
+    
+    console.log(`[${MODULE_ID}] Resolving target player: "${targetPlayer}" (normalized: "${searchTerm}")`);
+    
+    // FIRST try to find by player name (prioritize player names over character names for better UX)
+    let user = game.users?.find((u: User) => 
+      u.name?.toLowerCase() === searchTerm
+    );
+    
+    if (user) {
+      console.log(`[${MODULE_ID}] Found exact player name match: ${user.name}`);
+      return {
+        found: true,
+        user,
+        targetName: user.name || 'Unknown Player'
+      };
+    }
+    
+    // If no exact player match, try partial player match
+    if (!user) {
+      user = game.users?.find((u: User) => {
+        return Boolean(u.name && u.name.toLowerCase().includes(searchTerm));
+      });
+      
+      if (user) {
+        console.log(`[${MODULE_ID}] Found partial player name match: ${user.name}`);
+        return {
+          found: true,
+          user,
+          targetName: user.name || 'Unknown Player'
+        };
+      }
+    }
+
+    // THEN try to find by character name (exact match, then partial match)
+    let character = game.actors?.find((actor: Actor) => 
+      actor.name?.toLowerCase() === searchTerm && actor.hasPlayerOwner
+    );
+    
+    if (character) {
+      console.log(`[${MODULE_ID}] Found exact character match: ${character.name}`);
+    }
+    
+    // If no exact match, try partial match
+    if (!character) {
+      character = game.actors?.find((actor: Actor) => {
+        return Boolean(actor.name && actor.name.toLowerCase().includes(searchTerm) && actor.hasPlayerOwner);
+      });
+      
+      if (character) {
+        console.log(`[${MODULE_ID}] Found partial character match: ${character.name}`);
+      }
+    }
+
+    if (character) {
+      // Find the actual player owner (not GM) of this character
+      const user = game.users?.find((u: User) => 
+        character.testUserPermission(u, 'OWNER') && !u.isGM
+      );
+      
+      console.log(`[${MODULE_ID}] Character ownership resolution for ${character.name}:`, {
+        characterId: character.id,
+        hasPlayerOwner: character.hasPlayerOwner,
+        foundUser: user ? `${user.name} (ID: ${user.id})` : 'None',
+        allOwners: game.users?.filter(u => character.testUserPermission(u, 'OWNER')).map(u => `${u.name} (GM: ${u.isGM})`) || []
+      });
+      
+      if (user) {
+        return {
+          found: true,
+          user,
+          character,
+          targetName: user.name || 'Unknown Player'
+        };
+      } else {
+        // No player owner found - character is GM-only controlled
+        // Still return found=true but without user, GM can still roll for it
+        return {
+          found: true,
+          character,
+          targetName: character.name || 'Unknown Character'
+          // user is omitted (undefined) for GM-only characters
+        };
+      }
+    }
+
+    // No player or character found
+    return {
+      found: false,
+      targetName: targetPlayer
+    };
+  }
+
+  /**
+   * Build roll formula based on roll type and target
+   */
+  private buildRollFormula(rollType: string, rollTarget: string, rollModifier: string, character?: Actor): string {
+    let baseFormula = '1d20';
+
+    if (character && 'system' in character) {
+      const system = (character as any).system;
+      
+      switch (rollType) {
+        case 'ability':
+          const abilityMod = system.abilities?.[rollTarget]?.mod || 0;
+          baseFormula = `1d20+${abilityMod}`;
+          break;
+        
+        case 'skill':
+          const skillMod = system.skills?.[rollTarget]?.total || system.skills?.[rollTarget]?.mod || 0;
+          baseFormula = `1d20+${skillMod}`;
+          break;
+        
+        case 'save':
+          const saveMod = system.abilities?.[rollTarget]?.save || 0;
+          baseFormula = `1d20+${saveMod}`;
+          break;
+        
+        case 'initiative':
+          const initMod = system.attributes?.init?.mod || system.abilities?.dex?.mod || 0;
+          baseFormula = `1d20+${initMod}`;
+          break;
+        
+        case 'custom':
+          baseFormula = rollTarget; // Use rollTarget as the formula directly
+          break;
+        
+        default:
+          baseFormula = '1d20';
+      }
+    }
+
+    // Add modifier if provided
+    if (rollModifier && rollModifier.trim()) {
+      baseFormula += rollModifier.startsWith('+') || rollModifier.startsWith('-') ? rollModifier : `+${rollModifier}`;
+    }
+
+    return baseFormula;
+  }
+
+  /**
+   * Build roll button label
+   */
+  private buildRollButtonLabel(rollType: string, rollTarget: string, isPublic: boolean): string {
+    const visibility = isPublic ? 'Public' : 'Private';
+    
+    switch (rollType) {
+      case 'ability':
+        return `${rollTarget.toUpperCase()} Ability Check (${visibility})`;
+      case 'skill':
+        return `${rollTarget.charAt(0).toUpperCase() + rollTarget.slice(1)} Skill Check (${visibility})`;
+      case 'save':
+        return `${rollTarget.toUpperCase()} Saving Throw (${visibility})`;
+      case 'attack':
+        return `${rollTarget} Attack (${visibility})`;
+      case 'initiative':
+        return `Initiative Roll (${visibility})`;
+      case 'custom':
+        return `Custom Roll (${visibility})`;
+      default:
+        return `Roll (${visibility})`;
+    }
+  }
+
+  /**
+   * Attach click handlers to roll buttons and handle visibility
+   * Called by global renderChatMessage hook in main.ts
+   */
+  public attachRollButtonHandlers(html: JQuery): void {
+    const currentUserId = game.user?.id;
+    const isGM = game.user?.isGM;
+    
+    // Handle button visibility and styling based on permissions and public/private status
+    html.find('.mcp-roll-button').each((_index, element) => {
+      const button = $(element);
+      const targetUserId = button.data('target-user-id');
+      const isPublicRollRaw = button.data('is-public');
+      const isPublicRoll = isPublicRollRaw === true || isPublicRollRaw === 'true';
+      
+      // Determine if user can interact with this button
+      const canClickButton = isGM || (targetUserId && targetUserId === currentUserId);
+      
+      console.log(`[${MODULE_ID}] Button visibility check:`, {
+        currentUser: game.user?.name,
+        currentUserId,
+        isGM,
+        targetUserId,
+        isPublicRoll,
+        canClickButton
+      });
+      
+      if (isPublicRoll) {
+        // Public roll: show to all players, but style differently for non-clickable users
+        if (canClickButton) {
+          // Can click: normal active button
+          button.css({
+            'background': '#4CAF50',
+            'cursor': 'pointer',
+            'opacity': '1'
+          });
+          console.log(`[${MODULE_ID}] Showing active button for user ${game.user?.name}`);
+        } else {
+          // Cannot click: disabled/informational style
+          button.css({
+            'background': '#9E9E9E',
+            'cursor': 'not-allowed', 
+            'opacity': '0.7'
+          });
+          button.prop('disabled', true);
+          console.log(`[${MODULE_ID}] Showing disabled button for user ${game.user?.name}`);
+        }
+      } else {
+        // Private roll: only show to target user and GM
+        if (canClickButton) {
+          button.show();
+          console.log(`[${MODULE_ID}] Showing private button for user ${game.user?.name}`);
+        } else {
+          button.hide();
+          console.log(`[${MODULE_ID}] Hiding private button for user ${game.user?.name}`);
+        }
+      }
+    });
+    
+    // Attach click handlers to roll buttons
+    html.find('.mcp-roll-button').on('click', async (event) => {
+      const button = $(event.currentTarget);
+      
+      // Ignore clicks on disabled buttons
+      if (button.prop('disabled')) {
+        console.log(`[${MODULE_ID}] Ignoring click on disabled button`);
+        return;
+      }
+      
+      const rollFormula = button.data('roll-formula');
+      const rollLabel = button.data('roll-label');
+      const isPublicRaw = button.data('is-public');
+      const isPublic = isPublicRaw === true || isPublicRaw === 'true'; // Convert to proper boolean
+      const characterId = button.data('character-id');
+      const targetUserId = button.data('target-user-id');
+      const isGmRoll = game.user?.isGM || false; // Determine if this is a GM executing the roll
+
+      // Debug logging
+      console.log(`[${MODULE_ID}] Roll button clicked:`, {
+        currentUser: game.user?.name,
+        currentUserId: game.user?.id,
+        isGM: game.user?.isGM,
+        targetUserId: targetUserId,
+        rollLabel: rollLabel,
+        isPublicRaw: isPublicRaw,
+        isPublic: isPublic,
+        isPublicType: typeof isPublic
+      });
+
+      // Check if user has permission to execute this roll
+      // Allow GM to roll for any character, or allow character owner to roll for their character
+      const canExecuteRoll = game.user?.isGM || (targetUserId && targetUserId === game.user?.id);
+      
+      if (!canExecuteRoll) {
+        console.warn(`[${MODULE_ID}] Permission denied for roll execution`);
+        ui.notifications?.warn('You do not have permission to execute this roll');
+        return;
+      }
+      
+      console.log(`[${MODULE_ID}] Permission granted, executing roll`);
+
+      try {
+        // Create and evaluate the roll
+        const roll = new Roll(rollFormula);
+        await roll.evaluate();
+
+        console.log(`[${MODULE_ID}] Roll visibility determination:`, {
+          isPublic: isPublic,
+          isPublicType: typeof isPublic,
+          isPublicValue: isPublic,
+          targetUserId: targetUserId,
+          rollLabel: rollLabel,
+          willUseRollMode: isPublic ? 'PUBLIC' : 'PRIVATE'
+        });
+
+        // Get the character for speaker info
+        const character = characterId ? game.actors?.get(characterId) : null;
+        
+        // Create the roll message directly with ChatMessage.create() 
+        // roll.toMessage() has issues with rollMode - bypass it entirely
+        const messageData: any = {
+          speaker: ChatMessage.getSpeaker({ actor: character }),
+          content: roll.total?.toString() || '0',
+          type: CONST.CHAT_MESSAGE_TYPES.ROLL,
+          rolls: [roll],
+          flavor: `${rollLabel} ${isGmRoll ? '(GM Override)' : ''}`,
+          sound: (CONFIG as any).sounds?.dice
+        };
+
+        // For public rolls: no whisper (visible to all)
+        // For private rolls: whisper to target + GM
+        if (!isPublic) {
+          const whisperTargets: string[] = [];
+          if (targetUserId) {
+            whisperTargets.push(targetUserId);
+          }
+          // Add all active GMs
+          const gmUsers = game.users?.filter((u: User) => u.isGM && u.active);
+          if (gmUsers) {
+            for (const gm of gmUsers) {
+              if (gm.id && !whisperTargets.includes(gm.id)) {
+                whisperTargets.push(gm.id);
+              }
+            }
+          }
+          messageData.whisper = whisperTargets;
+        }
+        
+        console.log(`[${MODULE_ID}] Creating roll message directly:`, {
+          isPublic: isPublic,
+          hasWhisper: !!messageData.whisper,
+          whisperTargets: messageData.whisper || 'none (public)',
+          messageType: messageData.type
+        });
+        
+        await ChatMessage.create(messageData);
+
+        // Disable the button after rolling
+        button.prop('disabled', true).text('✓ Rolled');
+        
+      } catch (error) {
+        console.error(`[${MODULE_ID}] Error executing roll:`, error);
+        ui.notifications?.error('Failed to execute roll');
+      }
+    });
+  }
 }

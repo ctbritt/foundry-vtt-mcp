@@ -246,6 +246,25 @@ Hooks.on('closeSettingsConfig', () => {
   }
 });
 
+// Global hook to attach click handlers to all MCP roll buttons in chat
+Hooks.on('renderChatMessage', (_message: any, html: JQuery) => {
+  try {
+    // Only process if message contains MCP roll buttons
+    if (html.find('.mcp-roll-button').length > 0) {
+      console.log(`[${MODULE_ID}] Attaching handlers to roll buttons for user ${game.user?.name}`);
+      
+      // Get the data access instance to attach handlers
+      // We need to access through the query handlers to get the data access instance
+      const queryHandlers = foundryMCPBridge['queryHandlers'] as any;
+      if (queryHandlers && queryHandlers.dataAccess) {
+        queryHandlers.dataAccess.attachRollButtonHandlers(html);
+      }
+    }
+  } catch (error) {
+    console.warn(`[${MODULE_ID}] Error attaching roll button handlers:`, error);
+  }
+});
+
 // Handle world close/reload
 Hooks.on('canvasReady', () => {
   // Canvas ready indicates the world is fully loaded

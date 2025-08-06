@@ -11,6 +11,7 @@ import { CompendiumTools } from './tools/compendium.js';
 import { SceneTools } from './tools/scene.js';
 import { ActorCreationTools } from './tools/actor-creation.js';
 import { QuestCreationTools } from './tools/quest-creation.js';
+import { DiceRollTools } from './tools/dice-roll.js';
 
 // Utility to log errors and exit gracefully without corrupting stdio
 async function logAndExit(logger: Logger, message: string, error: any): Promise<never> {
@@ -51,6 +52,7 @@ const compendiumTools = new CompendiumTools({ foundryClient, logger });
 const sceneTools = new SceneTools({ foundryClient, logger });
 const actorCreationTools = new ActorCreationTools({ foundryClient, logger });
 const questCreationTools = new QuestCreationTools({ foundryClient, logger });
+const diceRollTools = new DiceRollTools({ foundryClient, logger });
 
 // Create MCP server
 const server = new Server(
@@ -72,6 +74,7 @@ const allTools = [
   ...sceneTools.getToolDefinitions(),
   ...actorCreationTools.getToolDefinitions(),
   ...questCreationTools.getToolDefinitions(),
+  ...diceRollTools.getToolDefinitions(),
 ];
 
 // Register tool list handler
@@ -154,6 +157,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         break;
       case 'search-journals':
         result = await questCreationTools.handleSearchJournals(args);
+        break;
+
+      // Phase 4: Dice roll tools
+      case 'request-player-rolls':
+        result = await diceRollTools.handleRequestPlayerRolls(args);
         break;
 
       default:

@@ -2,7 +2,7 @@ import { MODULE_ID } from './constants.js';
 import { FoundryDataAccess } from './data-access.js';
 
 export class QueryHandlers {
-  private dataAccess: FoundryDataAccess;
+  public dataAccess: FoundryDataAccess;
 
   constructor() {
     this.dataAccess = new FoundryDataAccess();
@@ -51,6 +51,9 @@ export class QueryHandlers {
     CONFIG.queries[`${modulePrefix}.listJournals`] = this.handleListJournals.bind(this);
     CONFIG.queries[`${modulePrefix}.getJournalContent`] = this.handleGetJournalContent.bind(this);
     CONFIG.queries[`${modulePrefix}.updateJournalContent`] = this.handleUpdateJournalContent.bind(this);
+
+    // Phase 4: Dice roll queries
+    CONFIG.queries[`${modulePrefix}.request-player-rolls`] = this.handleRequestPlayerRolls.bind(this);
 
     console.log(`[${MODULE_ID}] Registered ${Object.keys(CONFIG.queries).filter(k => k.startsWith(modulePrefix)).length} query handlers`);
   }
@@ -450,6 +453,36 @@ export class QueryHandlers {
       });
     } catch (error) {
       throw new Error(`Failed to update journal content: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Handle request player rolls - creates interactive roll buttons in chat
+   */
+  async handleRequestPlayerRolls(data: {
+    rollType: string;
+    rollTarget: string;
+    targetPlayer: string;
+    isPublic: boolean;
+    rollModifier: string;
+    flavor: string;
+  }): Promise<any> {
+    try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
+      this.dataAccess.validateFoundryState();
+
+      if (!data.rollType || !data.rollTarget || !data.targetPlayer) {
+        throw new Error('rollType, rollTarget, and targetPlayer are required');
+      }
+
+      return await this.dataAccess.requestPlayerRolls(data);
+    } catch (error) {
+      throw new Error(`Failed to request player rolls: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 }
