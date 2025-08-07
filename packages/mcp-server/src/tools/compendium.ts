@@ -23,21 +23,61 @@ export class CompendiumTools {
     return [
       {
         name: 'search-compendium',
-        description: 'Search through compendium packs for items, spells, monsters, and other content',
+        description: 'Enhanced search through compendium packs for items, spells, monsters, and other content. Supports advanced filtering for D&D 5e creatures by Challenge Rating, creature type, size, and more. Perfect for encounter building and creature discovery. OPTIMIZATION TIPS: Start with broad searches using CR ranges (e.g., {min: 10, max: 15}) rather than exact values. Use minimal query terms initially and rely on filters. The default limit of 50 is optimal for discovery - avoid reducing it. Search results now include key stats (CR, HP, AC) to reduce need for detailed lookups.',
         inputSchema: {
           type: 'object',
           properties: {
             query: {
               type: 'string',
-              description: 'Search query to find items in compendiums',
+              description: 'Search query to find items in compendiums (searches names and descriptions). TIP: For creature discovery, use broad terms like "knight", "warrior", or even "*" and rely primarily on filters for specificity.',
             },
             packType: {
               type: 'string',
               description: 'Optional filter by pack type (e.g., "Item", "Actor", "JournalEntry")',
             },
+            filters: {
+              type: 'object',
+              description: 'Advanced filters for D&D 5e actors/creatures (NPCs, monsters)',
+              properties: {
+                challengeRating: {
+                  oneOf: [
+                    { type: 'number', description: 'Exact CR value (e.g., 12)' },
+                    { 
+                      type: 'object',
+                      properties: {
+                        min: { type: 'number', description: 'Minimum CR' },
+                        max: { type: 'number', description: 'Maximum CR' }
+                      }
+                    }
+                  ]
+                },
+                creatureType: {
+                  type: 'string',
+                  description: 'Creature type (e.g., "humanoid", "dragon", "beast", "undead", "fey", "fiend", "celestial", "construct", "elemental", "giant", "monstrosity", "ooze", "plant")',
+                  enum: ['humanoid', 'dragon', 'beast', 'undead', 'fey', 'fiend', 'celestial', 'construct', 'elemental', 'giant', 'monstrosity', 'ooze', 'plant', 'aberration']
+                },
+                size: {
+                  type: 'string',
+                  description: 'Creature size (e.g., "medium", "large", "huge")',
+                  enum: ['tiny', 'small', 'medium', 'large', 'huge', 'gargantuan']
+                },
+                alignment: {
+                  type: 'string',
+                  description: 'Creature alignment (e.g., "lawful good", "chaotic evil", "neutral")'
+                },
+                hasLegendaryActions: {
+                  type: 'boolean',
+                  description: 'Filter for creatures with legendary actions'
+                },
+                spellcaster: {
+                  type: 'boolean',
+                  description: 'Filter for creatures that can cast spells'
+                }
+              }
+            },
             limit: {
               type: 'number',
-              description: 'Maximum number of results to return (default: 20, max: 50)',
+              description: 'Maximum number of results to return (default: 50 for discovery searches, max: 50)',
               minimum: 1,
               maximum: 50,
             },
@@ -47,7 +87,7 @@ export class CompendiumTools {
       },
       {
         name: 'get-compendium-item',
-        description: 'Retrieve detailed information about a specific compendium item',
+        description: 'Retrieve detailed information about a specific compendium item. Use compact mode for UI performance when full details are not needed.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -59,9 +99,64 @@ export class CompendiumTools {
               type: 'string',
               description: 'ID of the specific item to retrieve',
             },
+            compact: {
+              type: 'boolean',
+              description: 'Return condensed stat block (recommended for UI performance). Includes key stats, abilities, and actions but omits lengthy descriptions and technical data.',
+              default: false
+            },
           },
           required: ['packId', 'itemId'],
         },
+      },
+      {
+        name: 'list-creatures-by-criteria',
+        description: 'OPTIMIZED CREATURE DISCOVERY: Get a comprehensive list of creatures matching specific criteria. Perfect for encounter building - returns minimal data so Claude can use built-in monster knowledge to identify suitable creatures by name, then pull full details only for final selections. Features intelligent pack prioritization (core D&D packs first, then specialized content) and high result limits for complete surveys. This replaces inefficient text searches with efficient criteria-based surveys.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            challengeRating: {
+              oneOf: [
+                { type: 'number', description: 'Exact CR value (e.g., 12)' },
+                { type: 'string', description: 'Exact CR value as string (e.g., "12")' },
+                { 
+                  type: 'object',
+                  properties: {
+                    min: { type: 'number', description: 'Minimum CR (default: 0)' },
+                    max: { type: 'number', description: 'Maximum CR (default: 30)' }
+                  },
+                  description: 'CR range object (e.g., {"min": 10, "max": 15})'
+                }
+              ],
+              description: 'Filter by Challenge Rating - accepts number, string, or range object. Use ranges for broader discovery (e.g., {"min": 10, "max": 15}) or exact values (12 or "12")'
+            },
+            creatureType: {
+              type: 'string',
+              description: 'Filter by creature type',
+              enum: ['humanoid', 'dragon', 'beast', 'undead', 'fey', 'fiend', 'celestial', 'construct', 'elemental', 'giant', 'monstrosity', 'ooze', 'plant', 'aberration']
+            },
+            size: {
+              type: 'string',
+              description: 'Filter by creature size',
+              enum: ['tiny', 'small', 'medium', 'large', 'huge', 'gargantuan']
+            },
+            hasSpells: {
+              type: 'boolean',
+              description: 'Filter for spellcasting creatures'
+            },
+            hasLegendaryActions: {
+              type: 'boolean',
+              description: 'Filter for creatures with legendary actions'
+            },
+            limit: {
+              type: 'number',
+              description: 'Maximum results to return (default: 500 for comprehensive surveys, max: 1000)',
+              minimum: 1,
+              maximum: 1000,
+              default: 500
+            }
+          },
+          required: []
+        }
       },
       {
         name: 'list-compendium-packs',
@@ -83,7 +178,21 @@ export class CompendiumTools {
     const schema = z.object({
       query: z.string().min(2, 'Search query must be at least 2 characters'),
       packType: z.string().optional(),
-      limit: z.number().min(1).max(50).default(20),
+      filters: z.object({
+        challengeRating: z.union([
+          z.number(),
+          z.object({
+            min: z.number().optional(),
+            max: z.number().optional()
+          })
+        ]).optional(),
+        creatureType: z.enum(['humanoid', 'dragon', 'beast', 'undead', 'fey', 'fiend', 'celestial', 'construct', 'elemental', 'giant', 'monstrosity', 'ooze', 'plant', 'aberration']).optional(),
+        size: z.enum(['tiny', 'small', 'medium', 'large', 'huge', 'gargantuan']).optional(),
+        alignment: z.string().optional(),
+        hasLegendaryActions: z.boolean().optional(),
+        spellcaster: z.boolean().optional()
+      }).optional(),
+      limit: z.number().min(1).max(50).default(50),
     });
 
     // Add defensive parsing for MCP argument structure inconsistencies
@@ -112,12 +221,13 @@ export class CompendiumTools {
       }
     }
 
-    const { query, packType, limit } = parsedArgs;
+    const { query, packType, filters, limit } = parsedArgs;
 
     try {
       const results = await this.foundryClient.query('foundry-mcp-bridge.searchCompendium', {
         query,
         packType,
+        filters,
       });
 
       // Limit results
@@ -147,9 +257,10 @@ export class CompendiumTools {
     const schema = z.object({
       packId: z.string().min(1, 'Pack ID cannot be empty'),
       itemId: z.string().min(1, 'Item ID cannot be empty'),
+      compact: z.boolean().default(false),
     });
 
-    const { packId, itemId } = schema.parse(args);
+    const { packId, itemId, compact } = schema.parse(args);
 
     try {
       // Use the proper document retrieval method that already exists in actor creation
@@ -163,7 +274,7 @@ export class CompendiumTools {
       }
 
       // Format the response using the detailed item data
-      return {
+      const baseResponse = {
         id: item.id,
         name: item.name,
         type: item.type,
@@ -172,19 +283,101 @@ export class CompendiumTools {
           label: item.packLabel,
         },
         description: this.extractDescription(item),
-        fullDescription: this.extractFullDescription(item),
-        system: this.sanitizeSystemData(item.system || {}),
-        properties: this.extractItemProperties(item),
-        items: item.items || [],
-        effects: item.effects || [],
         hasImage: !!item.img,
         imageUrl: item.img,
-        fullData: item.fullData,
       };
+
+      if (compact) {
+        // Compact response for UI performance
+        const compactStats = this.extractCompactStats(item);
+        return {
+          ...baseResponse,
+          stats: compactStats,
+          properties: this.extractItemProperties(item),
+          items: (item.items || []).slice(0, 5), // Limit items to prevent bloat
+          mode: 'compact'
+        };
+      } else {
+        // Full response
+        return {
+          ...baseResponse,
+          fullDescription: this.extractFullDescription(item),
+          system: this.sanitizeSystemData(item.system || {}),
+          properties: this.extractItemProperties(item),
+          items: item.items || [],
+          effects: item.effects || [],
+          fullData: item.fullData,
+          mode: 'full'
+        };
+      }
 
     } catch (error) {
       this.logger.error('Failed to get compendium item', error);
       throw new Error(`Failed to retrieve item: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async handleListCreaturesByCriteria(args: any): Promise<any> {
+    const schema = z.object({
+      challengeRating: z.union([
+        // Handle range objects FIRST to avoid string transform conflicts
+        z.object({
+          min: z.union([z.number(), z.string().transform(val => parseFloat(val))]).default(0),
+          max: z.union([z.number(), z.string().transform(val => parseFloat(val))]).default(30)
+        }),
+        z.number(),
+        z.string().transform((val) => {
+          const num = parseFloat(val);
+          if (isNaN(num)) throw new Error('Invalid number format');
+          return num;
+        })
+      ]).optional(),
+      creatureType: z.enum(['humanoid', 'dragon', 'beast', 'undead', 'fey', 'fiend', 'celestial', 'construct', 'elemental', 'giant', 'monstrosity', 'ooze', 'plant', 'aberration']).optional(),
+      size: z.enum(['tiny', 'small', 'medium', 'large', 'huge', 'gargantuan']).optional(),
+      hasSpells: z.union([z.boolean(), z.string().transform(val => val.toLowerCase() === 'true')]).optional(),
+      hasLegendaryActions: z.union([z.boolean(), z.string().transform(val => val.toLowerCase() === 'true')]).optional(),
+      limit: z.union([
+        z.number().min(1).max(1000),
+        z.string().transform(val => {
+          const num = parseInt(val, 10);
+          if (isNaN(num) || num < 1 || num > 1000) throw new Error('Limit must be between 1 and 1000');
+          return num;
+        })
+      ]).optional().default(500),
+    });
+
+    let params;
+    try {
+      params = schema.parse(args);
+      this.logger.debug('Parsed creature criteria parameters successfully', params);
+    } catch (parseError) {
+      this.logger.error('Failed to parse creature criteria parameters', { args, parseError });
+      if (parseError instanceof z.ZodError) {
+        const errorDetails = parseError.errors.map(err => `${err.path.join('.')}: ${err.message}`).join('; ');
+        throw new Error(`Parameter validation failed: ${errorDetails}. Received args: ${JSON.stringify(args)}`);
+      }
+      throw parseError;
+    }
+
+    try {
+      const results = await this.foundryClient.query('foundry-mcp-bridge.listCreaturesByCriteria', params);
+
+      this.logger.debug('Creature criteria search completed', {
+        criteriaCount: Object.keys(params).length,
+        totalFound: results.length,
+        limit: params.limit
+      });
+
+      return {
+        creatures: results.map((creature: any) => this.formatCreatureListItem(creature)),
+        totalFound: results.length,
+        criteria: params,
+        optimizationNote: 'Use creature names to identify suitable options, then call get-compendium-item for final details only'
+      };
+
+    } catch (error) {
+      this.logger.error('Failed to list creatures by criteria', error);
+      throw new Error(`Failed to list creatures: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -230,7 +423,7 @@ export class CompendiumTools {
   }
 
   private formatCompendiumItem(item: any): any {
-    return {
+    const formatted: any = {
       id: item.id,
       name: item.name,
       type: item.type,
@@ -242,6 +435,45 @@ export class CompendiumTools {
       hasImage: !!item.img,
       summary: this.createItemSummary(item),
     };
+
+    // Add key stats for actors/creatures to reduce need for detail calls
+    if (item.type === 'npc' || item.type === 'character') {
+      const system = item.system || {};
+      const stats: any = {};
+      
+      // Challenge Rating
+      const cr = system.details?.cr || system.cr;
+      if (cr !== undefined) stats.challengeRating = cr;
+      
+      // Hit Points
+      const hp = system.attributes?.hp?.value || system.hp?.value;
+      const maxHp = system.attributes?.hp?.max || system.hp?.max;
+      if (hp !== undefined || maxHp !== undefined) {
+        stats.hitPoints = { current: hp, max: maxHp };
+      }
+      
+      // Armor Class
+      const ac = system.attributes?.ac?.value || system.ac?.value;
+      if (ac !== undefined) stats.armorClass = ac;
+      
+      // Creature Type
+      const creatureType = system.details?.type?.value || system.type?.value;
+      if (creatureType) stats.creatureType = creatureType;
+      
+      // Size
+      const size = system.traits?.size || system.size;
+      if (size) stats.size = size;
+      
+      // Alignment
+      const alignment = system.details?.alignment || system.alignment;
+      if (alignment) stats.alignment = alignment;
+      
+      if (Object.keys(stats).length > 0) {
+        formatted.stats = stats;
+      }
+    }
+
+    return formatted;
   }
 
   private formatDetailedCompendiumItem(item: any): any {
@@ -312,6 +544,72 @@ export class CompendiumTools {
     }
     
     return parts.join(' • ');
+  }
+
+  private formatCreatureListItem(creature: any): any {
+    const system = creature.system || {};
+    
+    // Ultra-minimal format for efficient discovery
+    return {
+      name: creature.name,
+      id: creature.id,
+      pack: { id: creature.pack, label: creature.packLabel },
+      challengeRating: system.details?.cr || system.cr || 0,
+      creatureType: system.details?.type?.value || system.type?.value || 'unknown',
+      size: system.traits?.size || system.size || 'medium',
+      // Key feature flags for quick filtering
+      flags: {
+        spellcaster: !!(system.spells || system.attributes?.spellcasting || 
+                       (system.details?.spellLevel && system.details.spellLevel > 0)),
+        legendary: !!(system.resources?.legact || system.legendary || 
+                      (system.resources?.legres && system.resources.legres.value > 0)),
+        undead: (system.details?.type?.value || '').toLowerCase() === 'undead',
+        dragon: (system.details?.type?.value || '').toLowerCase() === 'dragon',
+        fiend: (system.details?.type?.value || '').toLowerCase() === 'fiend'
+      }
+    };
+  }
+
+  private extractCompactStats(item: any): any {
+    const system = item.system || {};
+    const stats: any = {};
+    
+    // Core combat stats
+    if (system.attributes?.ac?.value) stats.armorClass = system.attributes.ac.value;
+    if (system.attributes?.hp?.max) stats.hitPoints = system.attributes.hp.max;
+    if (system.details?.cr !== undefined) stats.challengeRating = system.details.cr;
+    
+    // Basic info
+    if (system.details?.type?.value) stats.creatureType = system.details.type.value;
+    if (system.traits?.size) stats.size = system.traits.size;
+    if (system.details?.alignment) stats.alignment = system.details.alignment;
+    
+    // Key abilities (only show notable ones)
+    if (system.abilities) {
+      const abilities: any = {};
+      for (const [key, ability] of Object.entries(system.abilities)) {
+        const abil = ability as any;
+        if (abil.value !== undefined) {
+          const mod = Math.floor((abil.value - 10) / 2);
+          if (Math.abs(mod) >= 2) { // Only show significant modifiers
+            abilities[key.toUpperCase()] = { value: abil.value, modifier: mod };
+          }
+        }
+      }
+      if (Object.keys(abilities).length > 0) stats.abilities = abilities;
+    }
+    
+    // Speed
+    if (system.attributes?.movement) {
+      const movement = system.attributes.movement;
+      const speeds: string[] = [];
+      if (movement.walk) speeds.push(`${movement.walk} ft`);
+      if (movement.fly) speeds.push(`fly ${movement.fly} ft`);
+      if (movement.swim) speeds.push(`swim ${movement.swim} ft`);
+      if (speeds.length > 0) stats.speed = speeds.join(', ');
+    }
+    
+    return stats;
   }
 
   private extractItemProperties(item: any): any {

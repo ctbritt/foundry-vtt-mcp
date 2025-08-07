@@ -237,9 +237,16 @@ export class FoundryDataAccess {
   }
 
   /**
-   * Search compendium packs for items matching query
+   * Search compendium packs for items matching query with optional filters
    */
-  async searchCompendium(query: string, packType?: string): Promise<CompendiumSearchResult[]> {
+  async searchCompendium(query: string, packType?: string, filters?: {
+    challengeRating?: number | { min?: number; max?: number };
+    creatureType?: string;
+    size?: string;
+    alignment?: string;
+    hasLegendaryActions?: boolean;
+    spellcaster?: boolean;
+  }): Promise<CompendiumSearchResult[]> {
     this.checkPermission('allowCompendiumAccess');
 
     // Add defensive checks for query parameter
@@ -293,6 +300,13 @@ export class FoundryDataAccess {
             });
 
             if (nameMatch) {
+              // Apply filters if specified (primarily for Actor/NPC entries)
+              if (filters && this.shouldApplyFilters(entry, filters)) {
+                if (!this.passesFilters(entry, filters)) {
+                  continue; // Skip this entry if it doesn't pass filters
+                }
+              }
+
               results.push({
                 id: entry._id || '',
                 name: entry.name,
@@ -320,18 +334,373 @@ export class FoundryDataAccess {
       if (results.length >= 100) break;
     }
 
-    // Sort results by relevance (exact matches first, then alphabetical)
+    // Sort results by relevance with enhanced ranking for filtered searches
     results.sort((a, b) => {
+      // Exact name matches first
       const aExact = a.name.toLowerCase() === query.toLowerCase();
       const bExact = b.name.toLowerCase() === query.toLowerCase();
-      
       if (aExact && !bExact) return -1;
       if (!aExact && bExact) return 1;
       
+      // If filters are used, prioritize by filter match quality
+      if (filters) {
+        const aScore = this.calculateRelevanceScore(a, filters, query);
+        const bScore = this.calculateRelevanceScore(b, filters, query);
+        if (aScore !== bScore) return bScore - aScore; // Higher score first
+      }
+      
+      // Fallback to alphabetical
       return a.name.localeCompare(b.name);
     });
 
     return results.slice(0, 50); // Final limit
+  }
+
+  /**
+   * Check if filters should be applied to this entry
+   */
+  private shouldApplyFilters(entry: any, filters: any): boolean {
+    // Only apply filters to Actor entries (which includes NPCs/monsters)
+    if (entry.type !== 'npc' && entry.type !== 'character') {
+      return false;
+    }
+    
+    // Check if any filters are actually specified
+    return Object.keys(filters).some(key => filters[key] !== undefined);
+  }
+
+  /**
+   * Check if entry passes all specified filters
+   */
+  private passesFilters(entry: any, filters: {
+    challengeRating?: number | { min?: number; max?: number };
+    creatureType?: string;
+    size?: string;
+    alignment?: string;
+    hasLegendaryActions?: boolean;
+    spellcaster?: boolean;
+  }): boolean {
+    const system = entry.system || {};
+    
+    console.log(`[${this.moduleId}] Filtering ${entry.name}:`, {
+      entryType: entry.type,
+      system: system,
+      filters: filters
+    });
+
+    // Challenge Rating filter
+    if (filters.challengeRating !== undefined) {
+      const entryCR = system.details?.cr || system.cr || 0;
+      
+      if (typeof filters.challengeRating === 'number') {
+        // Exact CR match
+        if (entryCR !== filters.challengeRating) {
+          console.log(`[${this.moduleId}] ${entry.name} failed CR filter: ${entryCR} !== ${filters.challengeRating}`);
+          return false;
+        }
+      } else if (typeof filters.challengeRating === 'object') {
+        // CR range
+        const { min, max } = filters.challengeRating;
+        if (min !== undefined && entryCR < min) {
+          console.log(`[${this.moduleId}] ${entry.name} failed CR min filter: ${entryCR} < ${min}`);
+          return false;
+        }
+        if (max !== undefined && entryCR > max) {
+          console.log(`[${this.moduleId}] ${entry.name} failed CR max filter: ${entryCR} > ${max}`);
+          return false;
+        }
+      }
+    }
+
+    // Creature Type filter
+    if (filters.creatureType) {
+      const entryType = system.details?.type?.value || system.type?.value || '';
+      if (entryType.toLowerCase() !== filters.creatureType.toLowerCase()) {
+        console.log(`[${this.moduleId}] ${entry.name} failed creature type filter: "${entryType}" !== "${filters.creatureType}"`);
+        return false;
+      }
+    }
+
+    // Size filter
+    if (filters.size) {
+      const entrySize = system.traits?.size || system.size || '';
+      if (entrySize.toLowerCase() !== filters.size.toLowerCase()) {
+        console.log(`[${this.moduleId}] ${entry.name} failed size filter: "${entrySize}" !== "${filters.size}"`);
+        return false;
+      }
+    }
+
+    // Alignment filter
+    if (filters.alignment) {
+      const entryAlignment = system.details?.alignment || system.alignment || '';
+      if (!entryAlignment.toLowerCase().includes(filters.alignment.toLowerCase())) {
+        console.log(`[${this.moduleId}] ${entry.name} failed alignment filter: "${entryAlignment}" does not contain "${filters.alignment}"`);
+        return false;
+      }
+    }
+
+    // Legendary Actions filter
+    if (filters.hasLegendaryActions !== undefined) {
+      const hasLegendary = !!(system.resources?.legact || system.legendary || 
+                             (system.resources?.legres && system.resources.legres.value > 0));
+      if (hasLegendary !== filters.hasLegendaryActions) {
+        console.log(`[${this.moduleId}] ${entry.name} failed legendary actions filter: ${hasLegendary} !== ${filters.hasLegendaryActions}`);
+        return false;
+      }
+    }
+
+    // Spellcaster filter
+    if (filters.spellcaster !== undefined) {
+      const isSpellcaster = !!(system.spells || system.attributes?.spellcasting || 
+                               (system.details?.spellLevel && system.details.spellLevel > 0));
+      if (isSpellcaster !== filters.spellcaster) {
+        console.log(`[${this.moduleId}] ${entry.name} failed spellcaster filter: ${isSpellcaster} !== ${filters.spellcaster}`);
+        return false;
+      }
+    }
+
+    console.log(`[${this.moduleId}] ${entry.name} passed all filters`);
+    return true;
+  }
+
+  /**
+   * Calculate relevance score for search result ranking
+   */
+  private calculateRelevanceScore(entry: any, filters: any, query: string): number {
+    let score = 0;
+    const system = entry.system || {};
+    
+    // Bonus for creature type match (high importance for encounter building)
+    if (filters.creatureType) {
+      const entryType = system.details?.type?.value || system.type?.value || '';
+      if (entryType.toLowerCase() === filters.creatureType.toLowerCase()) {
+        score += 20;
+      }
+    }
+    
+    // Bonus for CR match (exact match gets higher score than range)
+    if (filters.challengeRating !== undefined) {
+      const entryCR = system.details?.cr || system.cr || 0;
+      if (typeof filters.challengeRating === 'number') {
+        if (entryCR === filters.challengeRating) score += 15;
+      } else if (typeof filters.challengeRating === 'object') {
+        const { min, max } = filters.challengeRating;
+        if (min !== undefined && max !== undefined) {
+          // Bonus for being in range, extra for being in middle of range
+          if (entryCR >= min && entryCR <= max) {
+            score += 10;
+            const rangeMid = (min + max) / 2;
+            const distFromMid = Math.abs(entryCR - rangeMid);
+            score += Math.max(0, 5 - distFromMid); // Up to 5 bonus for being near middle
+          }
+        }
+      }
+    }
+    
+    // Bonus for common creature names (better for encounters)
+    const commonNames = ['knight', 'warrior', 'guard', 'soldier', 'mage', 'priest', 'bandit', 'orc', 'goblin', 'dragon'];
+    const lowerName = entry.name.toLowerCase();
+    if (commonNames.some(name => lowerName.includes(name))) {
+      score += 5;
+    }
+    
+    // Bonus for query term matches in name
+    const queryTerms = query.toLowerCase().split(' ');
+    for (const term of queryTerms) {
+      if (term.length > 2 && lowerName.includes(term)) {
+        score += 3;
+      }
+    }
+    
+    return score;
+  }
+
+  /**
+   * List creatures by criteria - optimized for discovery with minimal data
+   */
+  async listCreaturesByCriteria(criteria: {
+    challengeRating?: number | { min?: number; max?: number };
+    creatureType?: string;
+    size?: string;
+    hasSpells?: boolean;
+    hasLegendaryActions?: boolean;
+    limit?: number;
+  }): Promise<any[]> {
+    this.checkPermission('allowCompendiumAccess');
+
+    const results: any[] = [];
+    const limit = criteria.limit || 500;
+
+    // Filter packs to only Actor packs (creatures/NPCs) and prioritize by likelihood
+    const actorPacks = Array.from(game.packs.values()).filter(pack => {
+      return pack.metadata.type === 'Actor';
+    });
+
+    // Prioritize packs by likelihood of containing relevant creatures
+    const packs = this.prioritizePacksForCreatures(actorPacks);
+
+    console.log(`[${this.moduleId}] Scanning ${packs.length} Actor packs for creatures with criteria (prioritized order):`, criteria);
+
+    for (const pack of packs) {
+      try {
+        // Ensure pack index is loaded
+        if (!pack.indexed) {
+          await pack.getIndex();
+        }
+
+        // Process each entry
+        for (const entry of pack.index.values()) {
+          try {
+            // Only process NPC/character type actors
+            if (entry.type !== 'npc' && entry.type !== 'character') {
+              continue;
+            }
+
+            // Apply criteria filters
+            if (!this.passesCriteria(entry, criteria)) {
+              continue;
+            }
+
+            results.push({
+              id: entry._id || '',
+              name: entry.name,
+              type: entry.type,
+              pack: pack.metadata.id,
+              packLabel: pack.metadata.label,
+              system: entry.system ? this.sanitizeData(entry.system) : undefined,
+            });
+
+            // Stop if we've hit the limit
+            if (results.length >= limit) break;
+
+          } catch (entryError) {
+            console.warn(`[${this.moduleId}] Error processing entry in pack ${pack.metadata.id}:`, entryError);
+            continue;
+          }
+        }
+      } catch (error) {
+        console.warn(`[${this.moduleId}] Failed to process pack ${pack.metadata.id}:`, error);
+      }
+
+      // Global limit check
+      if (results.length >= limit) break;
+    }
+
+    console.log(`[${this.moduleId}] Found ${results.length} creatures matching criteria`);
+
+    // Sort by CR then name for consistent ordering
+    results.sort((a, b) => {
+      const aCR = a.system?.details?.cr || a.system?.cr || 0;
+      const bCR = b.system?.details?.cr || b.system?.cr || 0;
+      
+      if (aCR !== bCR) return aCR - bCR; // Lower CR first
+      return a.name.localeCompare(b.name);
+    });
+
+    return results;
+  }
+
+  /**
+   * Prioritize compendium packs by likelihood of containing relevant creatures
+   */
+  private prioritizePacksForCreatures(packs: any[]): any[] {
+    const priorityOrder = [
+      // Tier 1: Core D&D 5e content (highest priority)
+      { pattern: /^dnd5e\.monsters/, priority: 100 },           // Core D&D 5e monsters 
+      { pattern: /^dnd5e\.actors/, priority: 95 },             // Core D&D 5e actors
+      { pattern: /ddb.*monsters/i, priority: 90 },             // D&D Beyond monsters
+      
+      // Tier 2: Official modules and supplements
+      { pattern: /^world\..*ddb.*monsters/i, priority: 85 },   // World-specific DDB monsters
+      { pattern: /monsters/i, priority: 80 },                  // Any pack with "monsters"
+      
+      // Tier 3: Campaign and adventure content
+      { pattern: /^world\.(?!.*summon|.*hero)/i, priority: 70 }, // World packs (not summons/heroes)
+      
+      // Tier 4: Specialized content
+      { pattern: /summon|familiar/i, priority: 40 },           // Summons and familiars
+      
+      // Tier 5: Unlikely to contain monsters (lowest priority) 
+      { pattern: /hero|player|pc/i, priority: 10 },            // Player characters
+    ];
+
+    return packs.sort((a, b) => {
+      const aScore = this.getPackPriority(a.metadata.id, a.metadata.label, priorityOrder);
+      const bScore = this.getPackPriority(b.metadata.id, b.metadata.label, priorityOrder);
+      
+      if (aScore !== bScore) {
+        return bScore - aScore; // Higher score first
+      }
+      
+      // Secondary sort by pack label alphabetically
+      return a.metadata.label.localeCompare(b.metadata.label);
+    });
+  }
+
+  /**
+   * Get priority score for a pack based on ID and label
+   */
+  private getPackPriority(packId: string, packLabel: string, priorityOrder: { pattern: RegExp; priority: number }[]): number {
+    for (const rule of priorityOrder) {
+      if (rule.pattern.test(packId) || rule.pattern.test(packLabel)) {
+        return rule.priority;
+      }
+    }
+    // Default priority for unmatched packs
+    return 50;
+  }
+
+  /**
+   * Check if creature entry passes the given criteria
+   */
+  private passesCriteria(entry: any, criteria: {
+    challengeRating?: number | { min?: number; max?: number };
+    creatureType?: string;
+    size?: string;
+    hasSpells?: boolean;
+    hasLegendaryActions?: boolean;
+  }): boolean {
+    const system = entry.system || {};
+
+    // Challenge Rating filter
+    if (criteria.challengeRating !== undefined) {
+      const entryCR = system.details?.cr || system.cr || 0;
+      
+      if (typeof criteria.challengeRating === 'number') {
+        if (entryCR !== criteria.challengeRating) return false;
+      } else if (typeof criteria.challengeRating === 'object') {
+        const { min = 0, max = 30 } = criteria.challengeRating;
+        if (entryCR < min || entryCR > max) return false;
+      }
+    }
+
+    // Creature Type filter
+    if (criteria.creatureType) {
+      const entryType = system.details?.type?.value || system.type?.value || '';
+      if (entryType.toLowerCase() !== criteria.creatureType.toLowerCase()) return false;
+    }
+
+    // Size filter
+    if (criteria.size) {
+      const entrySize = system.traits?.size || system.size || '';
+      if (entrySize.toLowerCase() !== criteria.size.toLowerCase()) return false;
+    }
+
+    // Spellcaster filter
+    if (criteria.hasSpells !== undefined) {
+      const isSpellcaster = !!(system.spells || system.attributes?.spellcasting || 
+                               (system.details?.spellLevel && system.details.spellLevel > 0));
+      if (isSpellcaster !== criteria.hasSpells) return false;
+    }
+
+    // Legendary Actions filter
+    if (criteria.hasLegendaryActions !== undefined) {
+      const hasLegendary = !!(system.resources?.legact || system.legendary || 
+                             (system.resources?.legres && system.resources.legres.value > 0));
+      if (hasLegendary !== criteria.hasLegendaryActions) return false;
+    }
+
+    return true;
   }
 
   /**
@@ -1143,13 +1512,13 @@ export class FoundryDataAccess {
       const messageData = {
         content: rollButtonHtml,
         speaker: ChatMessage.getSpeaker({ actor: game.user }),
-        type: CONST.CHAT_MESSAGE_TYPES.OTHER,
+        style: (CONST as any).CHAT_MESSAGE_STYLES?.OTHER || 0, // Use style instead of deprecated type
         whisper: whisperTargets,
       };
 
       await ChatMessage.create(messageData);
 
-      // Note: Click handlers are attached globally via renderChatMessage hook in init()
+      // Note: Click handlers are attached globally via renderChatMessageHTML hook in main.ts
       // This ensures all users get the handlers when they see the message
 
       return {
@@ -1271,50 +1640,116 @@ export class FoundryDataAccess {
   }
 
   /**
-   * Build roll formula based on roll type and target
+   * Build roll formula based on roll type and target using Foundry's roll data system
    */
   private buildRollFormula(rollType: string, rollTarget: string, rollModifier: string, character?: Actor): string {
     let baseFormula = '1d20';
 
-    if (character && 'system' in character) {
-      const system = (character as any).system;
+    if (character) {
+      // Use Foundry's getRollData() to get calculated modifiers including active effects
+      const rollData = character.getRollData() as any; // Type assertion for Foundry's dynamic roll data
+      
+      console.log(`[${MODULE_ID}] Building roll formula for ${rollType}:${rollTarget} with rollData:`, {
+        rollType,
+        rollTarget,
+        abilities: rollData.abilities,
+        skills: rollData.skills,
+        attributes: rollData.attributes
+      });
+      
+      // DEBUG: Log the complete skills structure to understand the data format
+      if (rollData.skills) {
+        console.log(`[${MODULE_ID}] Complete skills structure:`, rollData.skills);
+        console.log(`[${MODULE_ID}] Skills keys:`, Object.keys(rollData.skills));
+      }
       
       switch (rollType) {
         case 'ability':
-          const abilityMod = system.abilities?.[rollTarget]?.mod || 0;
+          // Use calculated ability modifier from roll data
+          const abilityMod = rollData.abilities?.[rollTarget]?.mod ?? 0;
           baseFormula = `1d20+${abilityMod}`;
+          console.log(`[${MODULE_ID}] Ability ${rollTarget}: mod = ${abilityMod}`);
           break;
         
         case 'skill':
-          const skillMod = system.skills?.[rollTarget]?.total || system.skills?.[rollTarget]?.mod || 0;
+          // Map skill name to skill code (D&D 5e uses 3-letter codes)
+          const skillCode = this.getSkillCode(rollTarget);
+          // Use calculated skill total from roll data (includes ability mod + proficiency + bonuses)
+          const skillMod = rollData.skills?.[skillCode]?.total ?? 0;
           baseFormula = `1d20+${skillMod}`;
+          console.log(`[${MODULE_ID}] Skill ${rollTarget} (code: ${skillCode}): total = ${skillMod}`, rollData.skills?.[skillCode]);
           break;
         
         case 'save':
-          const saveMod = system.abilities?.[rollTarget]?.save || 0;
+          // Use saving throw modifier from roll data
+          const saveMod = rollData.abilities?.[rollTarget]?.save ?? rollData.abilities?.[rollTarget]?.mod ?? 0;
           baseFormula = `1d20+${saveMod}`;
+          console.log(`[${MODULE_ID}] Save ${rollTarget}: save = ${saveMod}`);
           break;
         
         case 'initiative':
-          const initMod = system.attributes?.init?.mod || system.abilities?.dex?.mod || 0;
+          // Use initiative modifier from attributes or dex mod
+          const initMod = rollData.attributes?.init?.mod ?? rollData.abilities?.dex?.mod ?? 0;
           baseFormula = `1d20+${initMod}`;
+          console.log(`[${MODULE_ID}] Initiative: mod = ${initMod}`);
           break;
         
         case 'custom':
           baseFormula = rollTarget; // Use rollTarget as the formula directly
+          console.log(`[${MODULE_ID}] Custom roll formula: ${baseFormula}`);
           break;
         
         default:
           baseFormula = '1d20';
+          console.log(`[${MODULE_ID}] Default roll formula: ${baseFormula}`);
       }
+    } else {
+      console.warn(`[${MODULE_ID}] No character provided for roll formula, using base 1d20`);
     }
 
     // Add modifier if provided
     if (rollModifier && rollModifier.trim()) {
-      baseFormula += rollModifier.startsWith('+') || rollModifier.startsWith('-') ? rollModifier : `+${rollModifier}`;
+      const modifier = rollModifier.startsWith('+') || rollModifier.startsWith('-') ? rollModifier : `+${rollModifier}`;
+      baseFormula += modifier;
+      console.log(`[${MODULE_ID}] Added custom modifier ${modifier}, final formula: ${baseFormula}`);
     }
 
+    console.log(`[${MODULE_ID}] Final roll formula: ${baseFormula}`);
     return baseFormula;
+  }
+
+  /**
+   * Map skill names to D&D 5e skill codes
+   */
+  private getSkillCode(skillName: string): string {
+    const skillMap: { [key: string]: string } = {
+      'acrobatics': 'acr',
+      'animal handling': 'ani', 
+      'animalhandling': 'ani',
+      'arcana': 'arc',
+      'athletics': 'ath',
+      'deception': 'dec',
+      'history': 'his',
+      'insight': 'ins',
+      'intimidation': 'itm',
+      'investigation': 'inv',
+      'medicine': 'med',
+      'nature': 'nat',
+      'perception': 'prc',
+      'performance': 'prf',
+      'persuasion': 'per',
+      'religion': 'rel',
+      'sleight of hand': 'slt',
+      'sleightofhand': 'slt',
+      'stealth': 'ste',
+      'survival': 'sur'
+    };
+    
+    const normalizedName = skillName.toLowerCase().replace(/\s+/g, '');
+    const skillCode = skillMap[normalizedName] || skillMap[skillName.toLowerCase()] || skillName.toLowerCase();
+    
+    console.log(`[${MODULE_ID}] Mapping skill name "${skillName}" to code "${skillCode}"`);
+    return skillCode;
   }
 
   /**
@@ -1343,7 +1778,7 @@ export class FoundryDataAccess {
 
   /**
    * Attach click handlers to roll buttons and handle visibility
-   * Called by global renderChatMessage hook in main.ts
+   * Called by global renderChatMessageHTML hook in main.ts
    */
   public attachRollButtonHandlers(html: JQuery): void {
     const currentUserId = game.user?.id;
@@ -1459,21 +1894,12 @@ export class FoundryDataAccess {
         // Get the character for speaker info
         const character = characterId ? game.actors?.get(characterId) : null;
         
-        // Create the roll message directly with ChatMessage.create() 
-        // roll.toMessage() has issues with rollMode - bypass it entirely
-        const messageData: any = {
-          speaker: ChatMessage.getSpeaker({ actor: character }),
-          content: roll.total?.toString() || '0',
-          type: CONST.CHAT_MESSAGE_TYPES.ROLL,
-          rolls: [roll],
-          flavor: `${rollLabel} ${isGmRoll ? '(GM Override)' : ''}`,
-          sound: (CONFIG as any).sounds?.dice
-        };
-
-        // For public rolls: no whisper (visible to all)
-        // For private rolls: whisper to target + GM
+        // Use the modern Foundry v13 approach with roll.toMessage()
+        const rollMode = isPublic ? 'publicroll' : 'whisper';
+        const whisperTargets: string[] = [];
+        
         if (!isPublic) {
-          const whisperTargets: string[] = [];
+          // For private rolls: whisper to target + GM
           if (targetUserId) {
             whisperTargets.push(targetUserId);
           }
@@ -1486,17 +1912,26 @@ export class FoundryDataAccess {
               }
             }
           }
-          messageData.whisper = whisperTargets;
         }
         
-        console.log(`[${MODULE_ID}] Creating roll message directly:`, {
+        const messageData: any = {
+          speaker: ChatMessage.getSpeaker({ actor: character }),
+          flavor: `${rollLabel} ${isGmRoll ? '(GM Override)' : ''}`,
+          ...(whisperTargets.length > 0 ? { whisper: whisperTargets } : {})
+        };
+        
+        console.log(`[${MODULE_ID}] Creating roll message with toMessage():`, {
           isPublic: isPublic,
-          hasWhisper: !!messageData.whisper,
-          whisperTargets: messageData.whisper || 'none (public)',
-          messageType: messageData.type
+          rollMode: rollMode,
+          hasWhisper: whisperTargets.length > 0,
+          whisperTargets: whisperTargets.length > 0 ? whisperTargets : 'none (public)'
         });
         
-        await ChatMessage.create(messageData);
+        // Use roll.toMessage() with proper rollMode
+        await roll.toMessage(messageData, { 
+          create: true,
+          rollMode: rollMode
+        });
 
         // Disable the button after rolling
         button.prop('disabled', true).text('✓ Rolled');
