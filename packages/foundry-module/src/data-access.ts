@@ -525,7 +525,7 @@ export class FoundryDataAccess {
     hasSpells?: boolean;
     hasLegendaryActions?: boolean;
     limit?: number;
-  }): Promise<any[]> {
+  }): Promise<{creatures: any[], searchSummary: any}> {
     this.checkPermission('allowCompendiumAccess');
 
     const results: any[] = [];
@@ -586,7 +586,46 @@ export class FoundryDataAccess {
       if (results.length >= limit) break;
     }
 
-    console.log(`[${this.moduleId}] Found ${results.length} creatures matching criteria`);
+    // Gather pack information for transparency
+    const packsSearched = packs.length;
+    const priorityOrder = [
+      // Tier 1: Core D&D 5e content (highest priority)
+      { pattern: /^dnd5e\.monsters/, priority: 100 },           // Core D&D 5e monsters 
+      { pattern: /^dnd5e\.actors/, priority: 95 },             // Core D&D 5e actors
+      { pattern: /ddb.*monsters/i, priority: 90 },             // D&D Beyond monsters
+      
+      // Tier 2: Official modules and supplements
+      { pattern: /^world\..*ddb.*monsters/i, priority: 85 },   // World-specific DDB monsters
+      { pattern: /monsters/i, priority: 80 },                  // Any pack with "monsters"
+      
+      // Tier 3: Campaign and adventure content
+      { pattern: /^world\.(?!.*summon|.*hero)/i, priority: 70 }, // World packs (not summons/heroes)
+      
+      // Tier 4: Specialized content
+      { pattern: /summon|familiar/i, priority: 40 },           // Summons and familiars
+      
+      // Tier 5: Unlikely to contain monsters (lowest priority) 
+      { pattern: /hero|player|pc/i, priority: 10 },            // Player characters
+    ];
+    
+    const topPacks = packs.slice(0, 5).map(pack => ({
+      id: pack.metadata.id,
+      label: pack.metadata.label,
+      priority: this.getPackPriority(pack.metadata.id, pack.metadata.label, priorityOrder)
+    }));
+
+    console.log(`[${this.moduleId}] Found ${results.length} creatures matching criteria from ${packsSearched} packs`);
+    
+    // Log pack search results for transparency
+    const packResults = new Map();
+    results.forEach(creature => {
+      const count = packResults.get(creature.packLabel) || 0;
+      packResults.set(creature.packLabel, count + 1);
+    });
+    
+    if (packResults.size > 0) {
+      console.log(`[${this.moduleId}] Results by pack:`, Object.fromEntries(packResults));
+    }
 
     // Sort by CR then name for consistent ordering
     results.sort((a, b) => {
@@ -597,7 +636,16 @@ export class FoundryDataAccess {
       return a.name.localeCompare(b.name);
     });
 
-    return results;
+    return {
+      creatures: results,
+      searchSummary: {
+        packsSearched,
+        topPacks,
+        totalCreaturesFound: results.length,
+        resultsByPack: Object.fromEntries(packResults),
+        criteria: criteria
+      }
+    };
   }
 
   /**

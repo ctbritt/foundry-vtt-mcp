@@ -320,30 +320,41 @@ export class CompendiumTools {
   async handleListCreaturesByCriteria(args: any): Promise<any> {
     const schema = z.object({
       challengeRating: z.union([
-        // Handle range objects FIRST to avoid string transform conflicts
+        // Range object - simplified validation without transforms
         z.object({
-          min: z.union([z.number(), z.string().transform(val => parseFloat(val))]).default(0),
-          max: z.union([z.number(), z.string().transform(val => parseFloat(val))]).default(30)
+          min: z.number().optional().default(0),
+          max: z.number().optional().default(30)
         }),
+        // Single number
         z.number(),
-        z.string().transform((val) => {
-          const num = parseFloat(val);
-          if (isNaN(num)) throw new Error('Invalid number format');
-          return num;
-        })
+        // String that converts to number (defensive parsing)
+        z.string().refine((val) => !isNaN(parseFloat(val)), {
+          message: 'Challenge rating must be a valid number'
+        }).transform((val) => parseFloat(val))
       ]).optional(),
       creatureType: z.enum(['humanoid', 'dragon', 'beast', 'undead', 'fey', 'fiend', 'celestial', 'construct', 'elemental', 'giant', 'monstrosity', 'ooze', 'plant', 'aberration']).optional(),
       size: z.enum(['tiny', 'small', 'medium', 'large', 'huge', 'gargantuan']).optional(),
-      hasSpells: z.union([z.boolean(), z.string().transform(val => val.toLowerCase() === 'true')]).optional(),
-      hasLegendaryActions: z.union([z.boolean(), z.string().transform(val => val.toLowerCase() === 'true')]).optional(),
+      hasSpells: z.union([
+        z.boolean(), 
+        z.string().refine((val) => ['true', 'false'].includes(val.toLowerCase()), {
+          message: 'hasSpells must be true or false'
+        }).transform(val => val.toLowerCase() === 'true')
+      ]).optional(),
+      hasLegendaryActions: z.union([
+        z.boolean(), 
+        z.string().refine((val) => ['true', 'false'].includes(val.toLowerCase()), {
+          message: 'hasLegendaryActions must be true or false'
+        }).transform(val => val.toLowerCase() === 'true')
+      ]).optional(),
       limit: z.union([
         z.number().min(1).max(1000),
-        z.string().transform(val => {
+        z.string().refine((val) => {
           const num = parseInt(val, 10);
-          if (isNaN(num) || num < 1 || num > 1000) throw new Error('Limit must be between 1 and 1000');
-          return num;
-        })
-      ]).optional().default(500),
+          return !isNaN(num) && num >= 1 && num <= 1000;
+        }, {
+          message: 'Limit must be a number between 1 and 1000'
+        }).transform(val => parseInt(val, 10))
+      ]).optional().default(100), // Reduced default for better Claude Desktop exploration
     });
 
     let params;
@@ -364,14 +375,27 @@ export class CompendiumTools {
 
       this.logger.debug('Creature criteria search completed', {
         criteriaCount: Object.keys(params).length,
-        totalFound: results.length,
-        limit: params.limit
+        totalFound: results.response?.creatures?.length || 0,
+        limit: params.limit,
+        packsSearched: results.response?.searchSummary?.packsSearched || 0
       });
 
+      // Extract search summary for transparency
+      const searchSummary = results.response?.searchSummary || {
+        packsSearched: 0,
+        topPacks: [],
+        totalCreaturesFound: results.response?.creatures?.length || 0
+      };
+
       return {
-        creatures: results.map((creature: any) => this.formatCreatureListItem(creature)),
-        totalFound: results.length,
+        creatures: (results.response?.creatures || results).map((creature: any) => this.formatCreatureListItem(creature)),
+        totalFound: results.response?.creatures?.length || results.length,
         criteria: params,
+        searchSummary: {
+          ...searchSummary,
+          searchStrategy: 'Prioritized pack search - core D&D content first, then modules, then campaign-specific',
+          note: 'Packs searched in priority order to find most relevant creatures first'
+        },
         optimizationNote: 'Use creature names to identify suitable options, then call get-compendium-item for final details only'
       };
 
