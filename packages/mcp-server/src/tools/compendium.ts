@@ -320,10 +320,28 @@ export class CompendiumTools {
   async handleListCreaturesByCriteria(args: any): Promise<any> {
     const schema = z.object({
       challengeRating: z.union([
-        // Range object - simplified validation without transforms
+        // Range object - handle both native objects and JSON strings
         z.object({
           min: z.number().optional().default(0),
           max: z.number().optional().default(30)
+        }),
+        // JSON string that parses to range object
+        z.string().refine((val) => {
+          try {
+            const parsed = JSON.parse(val);
+            return typeof parsed === 'object' && parsed !== null && 
+                   (typeof parsed.min === 'number' || typeof parsed.max === 'number');
+          } catch {
+            return false;
+          }
+        }, {
+          message: 'Challenge rating range must be valid JSON object with min/max numbers'
+        }).transform((val) => {
+          const parsed = JSON.parse(val);
+          return {
+            min: parsed.min || 0,
+            max: parsed.max || 30
+          };
         }),
         // Single number
         z.number(),

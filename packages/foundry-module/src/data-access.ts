@@ -548,9 +548,13 @@ export class FoundryDataAccess {
           await pack.getIndex();
         }
 
-        // Process each entry
+        // Process each entry with debug info
+        let packEntryCount = 0;
+        let packMatchCount = 0;
         for (const entry of pack.index.values()) {
           try {
+            packEntryCount++;
+            
             // Only process NPC/character type actors
             if (entry.type !== 'npc' && entry.type !== 'character') {
               continue;
@@ -559,6 +563,20 @@ export class FoundryDataAccess {
             // Apply criteria filters
             if (!this.passesCriteria(entry, criteria)) {
               continue;
+            }
+            
+            packMatchCount++;
+            console.log(`[${this.moduleId}] MATCH FOUND: ${entry.name} in pack ${pack.metadata.label}`);
+            
+            // Log first match details for debugging
+            if (packMatchCount === 1) {
+              console.log(`[${this.moduleId}] First match details:`, {
+                name: entry.name,
+                type: entry.type,
+                system: entry.system ? 'present' : 'missing',
+                cr: entry.system?.details?.cr || entry.system?.cr,
+                creatureType: entry.system?.details?.type?.value || entry.system?.type?.value
+              });
             }
 
             results.push({
@@ -578,6 +596,9 @@ export class FoundryDataAccess {
             continue;
           }
         }
+        
+        console.log(`[${this.moduleId}] Pack ${pack.metadata.label}: ${packEntryCount} entries, ${packMatchCount} matches`);
+        
       } catch (error) {
         console.warn(`[${this.moduleId}] Failed to process pack ${pack.metadata.id}:`, error);
       }
@@ -710,22 +731,57 @@ export class FoundryDataAccess {
   }): boolean {
     const system = entry.system || {};
 
-    // Challenge Rating filter
+    // DEBUG: Log entry structure for first few entries
+    if (Math.random() < 0.1) { // 10% sampling to avoid spam
+      console.log(`[${this.moduleId}] DEBUG Entry:`, {
+        name: entry.name,
+        type: entry.type,
+        systemKeys: Object.keys(system),
+        cr: system.details?.cr || system.cr,
+        crValue: system.details?.cr?.value || system.details?.cr,
+        creatureType: system.details?.type?.value || system.type?.value,
+        systemStructure: {
+          details: system.details ? Object.keys(system.details) : 'none',
+          attributes: system.attributes ? Object.keys(system.attributes) : 'none'
+        }
+      });
+    }
+
+    // Challenge Rating filter - enhanced extraction
     if (criteria.challengeRating !== undefined) {
-      const entryCR = system.details?.cr || system.cr || 0;
+      // Try multiple possible CR locations in D&D 5e data structure
+      let entryCR = system.details?.cr?.value || system.details?.cr || system.cr?.value || system.cr || 0;
+      
+      // Handle fractional CRs (common in D&D 5e)
+      if (typeof entryCR === 'string') {
+        if (entryCR === '1/8') entryCR = 0.125;
+        else if (entryCR === '1/4') entryCR = 0.25;
+        else if (entryCR === '1/2') entryCR = 0.5;
+        else entryCR = parseFloat(entryCR) || 0;
+      }
       
       if (typeof criteria.challengeRating === 'number') {
-        if (entryCR !== criteria.challengeRating) return false;
+        if (entryCR !== criteria.challengeRating) {
+          console.log(`[${this.moduleId}] CR mismatch: ${entry.name} has CR ${entryCR}, looking for ${criteria.challengeRating}`);
+          return false;
+        }
       } else if (typeof criteria.challengeRating === 'object') {
         const { min = 0, max = 30 } = criteria.challengeRating;
-        if (entryCR < min || entryCR > max) return false;
+        if (entryCR < min || entryCR > max) {
+          console.log(`[${this.moduleId}] CR range mismatch: ${entry.name} has CR ${entryCR}, range ${min}-${max}`);
+          return false;
+        }
       }
     }
 
-    // Creature Type filter
+    // Creature Type filter - enhanced extraction
     if (criteria.creatureType) {
-      const entryType = system.details?.type?.value || system.type?.value || '';
-      if (entryType.toLowerCase() !== criteria.creatureType.toLowerCase()) return false;
+      // Try multiple possible type locations in D&D 5e data structure
+      const entryType = system.details?.type?.value || system.details?.type || system.type?.value || system.type || '';
+      if (entryType.toLowerCase() !== criteria.creatureType.toLowerCase()) {
+        console.log(`[${this.moduleId}] Type mismatch: ${entry.name} has type "${entryType}", looking for "${criteria.creatureType}"`);
+        return false;
+      }
     }
 
     // Size filter
