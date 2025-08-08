@@ -2,6 +2,7 @@ import { MODULE_ID } from './constants.js';
 import { SocketBridge } from './socket-bridge.js';
 import { QueryHandlers } from './queries.js';
 import { ModuleSettings } from './settings.js';
+// Connection control now handled through settings menu
 
 /**
  * Main Foundry MCP Bridge Module Class
@@ -11,6 +12,8 @@ class FoundryMCPBridge {
   private queryHandlers: QueryHandlers;
   private socketBridge: SocketBridge | null = null;
   private isInitialized = false;
+  private heartbeatInterval: number | null = null;
+  private lastActivity: Date = new Date();
 
   constructor() {
     this.settings = new ModuleSettings();
@@ -60,6 +63,8 @@ class FoundryMCPBridge {
 
       console.log(`[${MODULE_ID}] Foundry ready, checking bridge status...`);
 
+      // Connection control now handled through settings menu
+
       // Validate settings
       const validation = this.settings.validateSettings();
       if (!validation.valid) {
@@ -67,9 +72,28 @@ class FoundryMCPBridge {
         ui.notifications.warn(`MCP Bridge settings validation failed: ${validation.errors.join(', ')}`);
       }
 
-      // Start bridge if enabled
-      if (this.settings.getSetting('enabled')) {
-        await this.start();
+      // Handle connection based on mode
+      const connectionMode = this.settings.getSetting('connectionMode');
+      const enabled = this.settings.getSetting('enabled');
+      
+      if (enabled) {
+        switch (connectionMode) {
+          case 'automatic':
+            await this.start();
+            break;
+          case 'manual':
+            console.log(`[${MODULE_ID}] Manual connection mode - waiting for user action`);
+            if (this.settings.getSetting('enableNotifications')) {
+              ui.notifications.info('MCP Bridge ready - Use connection panel to connect manually');
+            }
+            break;
+          case 'on-demand':
+            console.log(`[${MODULE_ID}] On-demand connection mode - will connect on first tool use`);
+            break;
+          default:
+            console.warn(`[${MODULE_ID}] Unknown connection mode: ${connectionMode}`);
+            break;
+        }
       }
 
       console.log(`[${MODULE_ID}] Module ready`);
@@ -114,11 +138,21 @@ class FoundryMCPBridge {
       await this.socketBridge.connect();
 
       await this.settings.setSetting('lastConnectionState', 'connected');
+      await this.settings.setSetting('lastActivity', new Date().toISOString());
+      this.updateLastActivity();
+      
+      // Update settings display with connection status
+      this.settings.updateConnectionStatusDisplay(true, 17); // 17 MCP tools
       
       console.log(`[${MODULE_ID}] Bridge started successfully`);
       
-      // Show GM-specific status banner
-      ui.notifications.info('🔗 MCP Bridge connected successfully (GM only)');
+      // Start heartbeat monitoring if enabled
+      this.startHeartbeat();
+      
+      // Show connection notification based on user preference
+      if (this.settings.getSetting('enableNotifications')) {
+        ui.notifications.info('🔗 MCP Bridge connected successfully (GM only)');
+      }
       console.log(`[${MODULE_ID}] GM connection established - Bridge active for user: ${game.user?.name}`);
 
     } catch (error) {
@@ -142,13 +176,23 @@ class FoundryMCPBridge {
     try {
       console.log(`[${MODULE_ID}] Stopping MCP bridge...`);
 
+      // Stop heartbeat monitoring
+      this.stopHeartbeat();
+
       this.socketBridge.disconnect();
       this.socketBridge = null;
 
       await this.settings.setSetting('lastConnectionState', 'disconnected');
+      
+      // Update settings display with disconnected status
+      this.settings.updateConnectionStatusDisplay(false, 0);
 
       console.log(`[${MODULE_ID}] Bridge stopped`);
-      ui.notifications.info('MCP Bridge disconnected');
+      
+      // Show disconnection notification based on user preference
+      if (this.settings.getSetting('enableNotifications')) {
+        ui.notifications.info('MCP Bridge disconnected');
+      }
 
     } catch (error) {
       console.error(`[${MODULE_ID}] Error stopping bridge:`, error);
@@ -184,8 +228,90 @@ class FoundryMCPBridge {
       settings: this.settings.getAllSettings(),
       registeredMethods: this.queryHandlers.getRegisteredMethods(),
       lastConnectionState: this.settings.getSetting('lastConnectionState'),
+      lastActivity: this.lastActivity.toISOString(),
+      heartbeatActive: this.heartbeatInterval !== null,
     };
   }
+
+  /**
+   * Start heartbeat monitoring
+   */
+  private startHeartbeat(): void {
+    this.stopHeartbeat(); // Ensure no duplicate intervals
+    
+    const interval = this.settings.getSetting('heartbeatInterval') * 1000; // Convert to milliseconds
+    
+    this.heartbeatInterval = window.setInterval(async () => {
+      await this.performHeartbeat();
+    }, interval);
+    
+    console.log(`[${MODULE_ID}] Heartbeat monitoring started (${interval}ms interval)`);
+  }
+
+  /**
+   * Stop heartbeat monitoring
+   */
+  private stopHeartbeat(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+      console.log(`[${MODULE_ID}] Heartbeat monitoring stopped`);
+    }
+  }
+
+  /**
+   * Perform heartbeat check
+   */
+  private async performHeartbeat(): Promise<void> {
+    try {
+      // Lightweight connection check - just verify socket state
+      if (!this.socketBridge || !this.socketBridge.isConnected()) {
+        // Only log once per disconnection to avoid spam
+        if (this.lastActivity && new Date().getTime() - this.lastActivity.getTime() > 60000) {
+          console.warn(`[${MODULE_ID}] Heartbeat: Connection lost`);
+          
+          // Attempt auto-reconnection if enabled (with backoff)
+          if (this.settings.getSetting('autoReconnectEnabled')) {
+            console.log(`[${MODULE_ID}] Attempting auto-reconnection...`);
+            await this.restart();
+          }
+        }
+        return;
+      }
+
+      // Just update activity timestamp - no actual network ping needed
+      // The socket bridge already handles connection state monitoring
+      this.updateLastActivity();
+      
+    } catch (error) {
+      // Only attempt reconnect once per failure cycle
+      if (this.settings.getSetting('autoReconnectEnabled')) {
+        console.log(`[${MODULE_ID}] Heartbeat failure - attempting single reconnection...`);
+        try {
+          await this.restart();
+        } catch (reconnectError) {
+          console.error(`[${MODULE_ID}] Auto-reconnection failed:`, reconnectError);
+          // Disable further attempts until manual intervention
+          await this.settings.setSetting('autoReconnectEnabled', false);
+          if (this.settings.getSetting('enableNotifications')) {
+            ui.notifications.warn('⚠️ Lost connection to Claude Desktop - Auto-reconnect disabled');
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Update last activity timestamp
+   */
+  updateLastActivity(): void {
+    this.lastActivity = new Date();
+    this.settings.setSetting('lastActivity', this.lastActivity.toISOString());
+  }
+
+  /**
+   * Connection control is now handled through the settings menu
+   */
 
   /**
    * Cleanup when module is disabled or world is closed
@@ -247,17 +373,21 @@ Hooks.on('closeSettingsConfig', () => {
 });
 
 // Global hook to attach click handlers to all MCP roll buttons in chat
-Hooks.on('renderChatMessage', (_message: any, html: JQuery) => {
+// Using renderChatMessageHTML for Foundry v13 compatibility (renderChatMessage is deprecated)
+Hooks.on('renderChatMessageHTML', (_message: any, html: HTMLElement) => {
   try {
+    // Convert HTMLElement to jQuery for compatibility with existing handler code
+    const $html = $(html);
+    
     // Only process if message contains MCP roll buttons
-    if (html.find('.mcp-roll-button').length > 0) {
+    if ($html.find('.mcp-roll-button').length > 0) {
       console.log(`[${MODULE_ID}] Attaching handlers to roll buttons for user ${game.user?.name}`);
       
       // Get the data access instance to attach handlers
       // We need to access through the query handlers to get the data access instance
       const queryHandlers = foundryMCPBridge['queryHandlers'] as any;
       if (queryHandlers && queryHandlers.dataAccess) {
-        queryHandlers.dataAccess.attachRollButtonHandlers(html);
+        queryHandlers.dataAccess.attachRollButtonHandlers($html);
       }
     }
   } catch (error) {

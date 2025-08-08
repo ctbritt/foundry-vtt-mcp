@@ -116,6 +116,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'get-compendium-item':
         result = await compendiumTools.handleGetCompendiumItem(args);
         break;
+      case 'list-creatures-by-criteria':
+        result = await compendiumTools.handleListCreaturesByCriteria(args);
+        break;
       case 'list-compendium-packs':
         result = await compendiumTools.handleListCompendiumPacks(args);
         break;

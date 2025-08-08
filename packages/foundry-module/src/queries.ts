@@ -31,6 +31,7 @@ export class QueryHandlers {
 
     // Compendium queries
     CONFIG.queries[`${modulePrefix}.searchCompendium`] = this.handleSearchCompendium.bind(this);
+    CONFIG.queries[`${modulePrefix}.listCreaturesByCriteria`] = this.handleListCreaturesByCriteria.bind(this);
     CONFIG.queries[`${modulePrefix}.getAvailablePacks`] = this.handleGetAvailablePacks.bind(this);
 
     // Scene queries
@@ -125,7 +126,18 @@ export class QueryHandlers {
   /**
    * Handle compendium search request
    */
-  private async handleSearchCompendium(data: { query: string; packType?: string }): Promise<any> {
+  private async handleSearchCompendium(data: { 
+    query: string; 
+    packType?: string;
+    filters?: {
+      challengeRating?: number | { min?: number; max?: number };
+      creatureType?: string;
+      size?: string;
+      alignment?: string;
+      hasLegendaryActions?: boolean;
+      spellcaster?: boolean;
+    }
+  }): Promise<any> {
     try {
       // SECURITY: Silent GM validation
       const gmCheck = this.validateGMAccess();
@@ -144,9 +156,42 @@ export class QueryHandlers {
         throw new Error('query parameter is required and must be a string');
       }
 
-      return await this.dataAccess.searchCompendium(data.query, data.packType);
+      // Log filter usage for debugging
+      if (data.filters) {
+        console.log(`[${MODULE_ID}] Enhanced search with filters:`, data.filters);
+      }
+
+      return await this.dataAccess.searchCompendium(data.query, data.packType, data.filters);
     } catch (error) {
       throw new Error(`Failed to search compendium: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Handle list creatures by criteria request
+   */
+  private async handleListCreaturesByCriteria(data: {
+    challengeRating?: number | { min?: number; max?: number };
+    creatureType?: string;
+    size?: string;
+    hasSpells?: boolean;
+    hasLegendaryActions?: boolean;
+    limit?: number;
+  }): Promise<any> {
+    try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
+      this.dataAccess.validateFoundryState();
+
+      console.log(`[${MODULE_ID}] Listing creatures by criteria:`, data);
+
+      return await this.dataAccess.listCreaturesByCriteria(data);
+    } catch (error) {
+      throw new Error(`Failed to list creatures by criteria: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 

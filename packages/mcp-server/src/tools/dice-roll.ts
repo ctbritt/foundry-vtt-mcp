@@ -20,7 +20,7 @@ export class DiceRollTools {
     return [
       {
         name: 'request-player-rolls',
-        description: 'Request dice rolls from players with interactive buttons. Creates roll buttons in Foundry chat that players can click. CRITICAL WORKFLOW: 1) First ask user \"Do you want this to be a PUBLIC roll (visible to all players) or PRIVATE roll (visible to player and GM only)?\" 2) WAIT for their answer 3) Only then call this function with their choice. You CANNOT call this function until the user explicitly answers the public/private question. Supports character-to-player resolution and GM fallback.',
+        description: 'Request dice rolls from players with interactive buttons. Creates roll buttons in Foundry chat that players can click. VISIBILITY WORKFLOW: Before calling this function, ensure the user has specified whether they want a public or private roll. If they have already specified "public" or "private" in their request (e.g., "public performance check", "private stealth roll"), you can proceed directly. If the visibility is ambiguous or unspecified, ask: "Do you want this to be a PUBLIC roll (visible to all players) or PRIVATE roll (visible to player and GM only)?" and wait for their answer. Supports character-to-player resolution and GM fallback.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -44,7 +44,7 @@ export class DiceRollTools {
             userConfirmedVisibility: {
               type: 'boolean',
               const: true,
-              description: 'REQUIRED: Must be set to true to confirm user has explicitly answered whether they want a public or private roll. You MUST first ask the user \"Do you want this to be a PUBLIC roll (visible to all players) or PRIVATE roll (visible to player and GM only)?\" and WAIT for their explicit answer. Only after they respond should you set this parameter to true and call this function. DO NOT call this function until the user has answered the public/private question.'
+              description: 'REQUIRED: Must be set to true to confirm the roll visibility has been determined. This can happen in two ways: 1) User explicitly specified "public" or "private" in their original request (e.g., "public stealth check"), or 2) You asked the clarifying question and received their answer. Only set this to true when you are confident about the visibility preference, either from their original request or from a direct answer to your question.'
             },
             rollModifier: {
               type: 'string',
@@ -83,7 +83,7 @@ export class DiceRollTools {
       }
       
       if (params.userConfirmedVisibility !== true) {
-        return 'You must first ask the user whether they want a PUBLIC roll or PRIVATE roll and wait for their explicit answer before calling this function. Set userConfirmedVisibility to true only after the user has responded.';
+        return 'You must determine the roll visibility before calling this function. Either: 1) The user already specified "public" or "private" in their request, or 2) You need to ask: "Do you want this to be a PUBLIC roll or PRIVATE roll?" Set userConfirmedVisibility to true only when you are confident about the visibility preference.';
       }
       
       const response = await this.foundryClient.query('foundry-mcp-bridge.request-player-rolls', params);
@@ -98,7 +98,7 @@ export class DiceRollTools {
       if (error instanceof z.ZodError) {
         const messages = error.errors.map(e => {
           if (e.path.includes('isPublic')) {
-            return 'You must specify whether the roll should be PUBLIC (visible to all players) or PRIVATE (visible only to target player and GM). Please ask the user to clarify this.';
+            return 'You must specify whether the roll should be PUBLIC (visible to all players) or PRIVATE (visible only to target player and GM). Check if the user already specified this in their request, or ask them to clarify.';
           }
           return e.message;
         });
