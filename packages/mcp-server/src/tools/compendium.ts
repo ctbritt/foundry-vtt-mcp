@@ -591,23 +591,32 @@ export class CompendiumTools {
   private formatCreatureListItem(creature: any): any {
     const system = creature.system || {};
     
+    // Handle both enhanced creature index data (direct properties) and raw Foundry data (system paths)
+    const challengeRating = creature.challengeRating ?? system.details?.cr ?? system.cr ?? 0;
+    const creatureType = creature.creatureType ?? system.details?.type?.value ?? system.type?.value ?? 'unknown';
+    const size = creature.size ?? system.traits?.size ?? system.size ?? 'medium';
+    
+    // Use enhanced data for feature flags if available
+    const hasSpells = creature.hasSpells ?? !!(system.spells || system.attributes?.spellcasting || 
+                     (system.details?.spellLevel && system.details.spellLevel > 0));
+    const hasLegendary = creature.hasLegendaryActions ?? !!(system.resources?.legact || system.legendary || 
+                        (system.resources?.legres && system.resources.legres.value > 0));
+    
     // Ultra-minimal format for efficient discovery
     return {
       name: creature.name,
       id: creature.id,
       pack: { id: creature.pack, label: creature.packLabel },
-      challengeRating: system.details?.cr || system.cr || 0,
-      creatureType: system.details?.type?.value || system.type?.value || 'unknown',
-      size: system.traits?.size || system.size || 'medium',
+      challengeRating: challengeRating,
+      creatureType: creatureType,
+      size: size,
       // Key feature flags for quick filtering
       flags: {
-        spellcaster: !!(system.spells || system.attributes?.spellcasting || 
-                       (system.details?.spellLevel && system.details.spellLevel > 0)),
-        legendary: !!(system.resources?.legact || system.legendary || 
-                      (system.resources?.legres && system.resources.legres.value > 0)),
-        undead: (system.details?.type?.value || '').toLowerCase() === 'undead',
-        dragon: (system.details?.type?.value || '').toLowerCase() === 'dragon',
-        fiend: (system.details?.type?.value || '').toLowerCase() === 'fiend'
+        spellcaster: hasSpells,
+        legendary: hasLegendary,
+        undead: creatureType.toLowerCase() === 'undead',
+        dragon: creatureType.toLowerCase() === 'dragon',
+        fiend: creatureType.toLowerCase() === 'fiend'
       }
     };
   }

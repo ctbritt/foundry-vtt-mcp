@@ -40,6 +40,9 @@ class FoundryMCPBridge {
       // Register query handlers
       this.queryHandlers.registerHandlers();
 
+      // Expose data access globally for settings UI
+      (window as any).foundryMCPBridge.dataAccess = this.queryHandlers.dataAccess;
+
       this.isInitialized = true;
       console.log(`[${MODULE_ID}] Module initialized successfully`);
 
@@ -72,34 +75,58 @@ class FoundryMCPBridge {
         ui.notifications.warn(`MCP Bridge settings validation failed: ${validation.errors.join(', ')}`);
       }
 
-      // Handle connection based on mode
-      const connectionMode = this.settings.getSetting('connectionMode');
+      // Auto-connect when enabled (always automatic)
       const enabled = this.settings.getSetting('enabled');
       
       if (enabled) {
-        switch (connectionMode) {
-          case 'automatic':
-            await this.start();
-            break;
-          case 'manual':
-            console.log(`[${MODULE_ID}] Manual connection mode - waiting for user action`);
-            if (this.settings.getSetting('enableNotifications')) {
-              ui.notifications.info('MCP Bridge ready - Use connection panel to connect manually');
-            }
-            break;
-          case 'on-demand':
-            console.log(`[${MODULE_ID}] On-demand connection mode - will connect on first tool use`);
-            break;
-          default:
-            console.warn(`[${MODULE_ID}] Unknown connection mode: ${connectionMode}`);
-            break;
-        }
+        await this.start();
       }
+
+      // Auto-build enhanced creature index if enabled and not exists
+      await this.checkAndBuildEnhancedIndex();
 
       console.log(`[${MODULE_ID}] Module ready`);
 
     } catch (error) {
       console.error(`[${MODULE_ID}] Failed during ready:`, error);
+    }
+  }
+
+  /**
+   * Check if enhanced creature index exists and build if needed (better UX)
+   */
+  private async checkAndBuildEnhancedIndex(): Promise<void> {
+    try {
+      // Only for GM users
+      if (!this.isGMUser()) return;
+
+      // Check if enhanced index is enabled
+      const enhancedIndexEnabled = this.settings.getSetting('enableEnhancedCreatureIndex');
+      if (!enhancedIndexEnabled) return;
+
+      // Check if index file exists
+      const indexFilename = 'enhanced-creature-index.json';
+      try {
+        const browseResult = await FilePicker.browse('data', `worlds/${game.world.id}`);
+        const indexExists = browseResult.files.some(f => f.endsWith(indexFilename));
+        
+        if (!indexExists) {
+          console.log(`[${MODULE_ID}] Enhanced creature index not found, building automatically for better UX...`);
+          ui.notifications?.info('Building enhanced creature index for faster searches...');
+          
+          // Trigger index build through data access
+          if (this.queryHandlers?.dataAccess?.rebuildEnhancedCreatureIndex) {
+            await this.queryHandlers.dataAccess.rebuildEnhancedCreatureIndex();
+          }
+        } else {
+          console.log(`[${MODULE_ID}] Enhanced creature index exists, ready for instant searches`);
+        }
+      } catch (error) {
+        // World directory might not exist yet, that's okay
+        console.log(`[${MODULE_ID}] Could not check for enhanced index file (world directory may not exist yet)`);
+      }
+    } catch (error) {
+      console.warn(`[${MODULE_ID}] Failed to auto-build enhanced index:`, error);
     }
   }
 

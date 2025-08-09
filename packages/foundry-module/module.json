@@ -18,7 +18,8 @@
     "dist/main.js"
   ],
   "styles": [
-    "styles/module.css"
+    "styles/module.css",
+    "styles/enhanced-creature-index.css"
   ],
   "languages": [
     {

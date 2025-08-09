@@ -40,6 +40,47 @@ interface CompendiumSearchResult {
   pack: string;
   packLabel: string;
   system?: Record<string, unknown>;
+  summary?: string;
+  hasImage?: boolean;
+  description?: string;
+}
+
+interface EnhancedCreatureIndex {
+  id: string;
+  name: string;
+  type: string;
+  pack: string;
+  packLabel: string;
+  challengeRating: number;
+  creatureType: string;
+  size: string;
+  hitPoints: number;
+  armorClass: number;
+  hasSpells: boolean;
+  hasLegendaryActions: boolean;
+  alignment: string;
+  description?: string;
+  img?: string;
+}
+
+interface PersistentIndexMetadata {
+  version: string;
+  timestamp: number;
+  packFingerprints: Map<string, PackFingerprint>;
+  totalCreatures: number;
+}
+
+interface PackFingerprint {
+  packId: string;
+  packLabel: string;
+  lastModified: number;
+  documentCount: number;
+  checksum: string;
+}
+
+interface PersistentEnhancedIndex {
+  metadata: PersistentIndexMetadata;
+  creatures: EnhancedCreatureIndex[];
 }
 
 interface SceneInfo {
@@ -165,10 +206,656 @@ interface TokenPlacementResult {
   errors?: string[] | undefined;
 }
 
+/**
+ * Persistent Enhanced Creature Index System
+ * Stores pre-computed creature data in JSON file within Foundry world directory for instant filtering
+ * Uses file-based storage following Foundry best practices for large data sets
+ */
+class PersistentCreatureIndex {
+  private moduleId: string = MODULE_ID;
+  private readonly INDEX_VERSION = '1.0.0';
+  private readonly INDEX_FILENAME = 'enhanced-creature-index.json';
+  private buildInProgress = false;
+  private hooksRegistered = false;
+
+  constructor() {
+    this.registerFoundryHooks();
+  }
+
+  /**
+   * Get the file path for the enhanced creature index
+   */
+  private getIndexFilePath(): string {
+    // Store in world data directory using world ID
+    return `worlds/${game.world.id}/${this.INDEX_FILENAME}`;
+  }
+
+  /**
+   * Get or build the enhanced creature index
+   */
+  async getEnhancedIndex(): Promise<EnhancedCreatureIndex[]> {
+    // Check if we have a valid persistent index
+    const existingIndex = await this.loadPersistedIndex();
+    
+    if (existingIndex && this.isIndexValid(existingIndex)) {
+      console.log(`[${this.moduleId}] Using valid persisted enhanced creature index (${existingIndex.creatures.length} creatures)`);
+      return existingIndex.creatures;
+    }
+    
+    // Build new index if needed
+    console.log(`[${this.moduleId}] Enhanced creature index needs rebuild`);
+    return await this.buildEnhancedIndex();
+  }
+
+  /**
+   * Force rebuild of the enhanced index
+   */
+  async rebuildIndex(): Promise<EnhancedCreatureIndex[]> {
+    console.log(`[${this.moduleId}] Forcing rebuild of enhanced creature index`);
+    return await this.buildEnhancedIndex(true);
+  }
+
+  /**
+   * Load persisted index from JSON file
+   */
+  private async loadPersistedIndex(): Promise<PersistentEnhancedIndex | null> {
+    try {
+      const filePath = this.getIndexFilePath();
+      
+      // Check if file exists using Foundry's FilePicker
+      let fileExists = false;
+      try {
+        const browseResult = await FilePicker.browse('data', `worlds/${game.world.id}`);
+        fileExists = browseResult.files.some(f => f.endsWith(this.INDEX_FILENAME));
+      } catch (error) {
+        // Directory doesn't exist or other error, return null
+        return null;
+      }
+
+      if (!fileExists) {
+        return null;
+      }
+
+      // Load file content
+      console.log(`[${this.moduleId}] DEBUG - Loading index file from path: ${filePath}`);
+      const response = await fetch(filePath);
+      if (!response.ok) {
+        console.warn(`[${this.moduleId}] Failed to load index file: ${response.status}`);
+        return null;
+      }
+
+      const rawData = await response.json();
+      
+      // DEBUG: Log basic file info
+      console.log(`[${this.moduleId}] DEBUG - Raw index data loaded:`, {
+        creaturesCount: rawData.creatures?.length || 0,
+        hasMetadata: !!rawData.metadata,
+        firstCreature: rawData.creatures?.[0] ? {
+          name: rawData.creatures[0].name,
+          challengeRating: rawData.creatures[0].challengeRating,
+          creatureType: rawData.creatures[0].creatureType
+        } : null
+      });
+
+      // Convert Map data back from JSON
+      const metadata = rawData.metadata;
+      if (metadata && metadata.packFingerprints) {
+        metadata.packFingerprints = new Map(metadata.packFingerprints);
+      }
+
+      console.log(`[${this.moduleId}] Enhanced creature index loaded from file (${rawData.creatures?.length || 0} creatures)`);
+      return rawData;
+    } catch (error) {
+      console.warn(`[${this.moduleId}] Failed to load persisted index from file:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Save enhanced index to JSON file
+   */
+  private async savePersistedIndex(index: PersistentEnhancedIndex): Promise<void> {
+    try {
+      // Convert Map to Array for JSON serialization
+      const saveData = {
+        ...index,
+        metadata: {
+          ...index.metadata,
+          packFingerprints: Array.from(index.metadata.packFingerprints.entries())
+        }
+      };
+
+      const jsonContent = JSON.stringify(saveData, null, 2);
+
+      // Create a File object and upload it using Foundry's file system
+      const file = new File([jsonContent], this.INDEX_FILENAME, { type: 'application/json' });
+      
+      // Upload the file to the world directory
+      const uploadResponse = await FilePicker.upload('data', `worlds/${game.world.id}`, file);
+
+      if (uploadResponse) {
+        console.log(`[${this.moduleId}] Enhanced creature index saved to file (${index.creatures.length} creatures)`);
+      } else {
+        throw new Error('File upload failed');
+      }
+    } catch (error) {
+      console.error(`[${this.moduleId}] Failed to save enhanced index to file:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if existing index is valid (all packs unchanged)
+   */
+  private isIndexValid(existingIndex: PersistentEnhancedIndex): boolean {
+    if (existingIndex.metadata.version !== this.INDEX_VERSION) {
+      console.log(`[${this.moduleId}] Index version mismatch: ${existingIndex.metadata.version} !== ${this.INDEX_VERSION}`);
+      return false;
+    }
+
+    // Check each pack fingerprint
+    const actorPacks = Array.from(game.packs.values()).filter(pack => pack.metadata.type === 'Actor');
+    
+    for (const pack of actorPacks) {
+      const currentFingerprint = this.generatePackFingerprint(pack);
+      const savedFingerprint = existingIndex.metadata.packFingerprints.get(pack.metadata.id);
+      
+      if (!savedFingerprint) {
+        console.log(`[${this.moduleId}] New pack detected: ${pack.metadata.label}`);
+        return false;
+      }
+      
+      if (!this.fingerprintsMatch(currentFingerprint, savedFingerprint)) {
+        console.log(`[${this.moduleId}] Pack changed: ${pack.metadata.label}`);
+        return false;
+      }
+    }
+
+    // Check if any saved packs no longer exist
+    for (const [packId] of existingIndex.metadata.packFingerprints) {
+      if (!game.packs.get(packId)) {
+        console.log(`[${this.moduleId}] Pack removed: ${packId}`);
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Register Foundry hooks for real-time pack change detection
+   */
+  private registerFoundryHooks(): void {
+    if (this.hooksRegistered) return;
+
+    // Listen for compendium document changes
+    Hooks.on('createDocument', (document: any) => {
+      if (document.pack && (document.type === 'npc' || document.type === 'character')) {
+        console.log(`[${this.moduleId}] Actor document created in pack ${document.pack}, invalidating index`);
+        this.invalidateIndex();
+      }
+    });
+
+    Hooks.on('updateDocument', (document: any) => {
+      if (document.pack && (document.type === 'npc' || document.type === 'character')) {
+        console.log(`[${this.moduleId}] Actor document updated in pack ${document.pack}, invalidating index`);
+        this.invalidateIndex();
+      }
+    });
+
+    Hooks.on('deleteDocument', (document: any) => {
+      if (document.pack && (document.type === 'npc' || document.type === 'character')) {
+        console.log(`[${this.moduleId}] Actor document deleted from pack ${document.pack}, invalidating index`);
+        this.invalidateIndex();
+      }
+    });
+
+    // Listen for pack creation/deletion
+    Hooks.on('createCompendium', (pack: any) => {
+      if (pack.metadata.type === 'Actor') {
+        console.log(`[${this.moduleId}] New Actor compendium created: ${pack.metadata.label}, invalidating index`);
+        this.invalidateIndex();
+      }
+    });
+
+    Hooks.on('deleteCompendium', (pack: any) => {
+      if (pack.metadata.type === 'Actor') {
+        console.log(`[${this.moduleId}] Actor compendium deleted: ${pack.metadata.label}, invalidating index`);
+        this.invalidateIndex();
+      }
+    });
+
+    this.hooksRegistered = true;
+    console.log(`[${this.moduleId}] Foundry hooks registered for persistent index change detection`);
+  }
+
+  /**
+   * Invalidate the current index (mark for rebuild on next access)
+   */
+  private async invalidateIndex(): Promise<void> {
+    try {
+      // Check if auto-rebuild is enabled
+      const autoRebuild = game.settings.get(this.moduleId, 'autoRebuildIndex');
+      
+      if (!autoRebuild) {
+        console.log(`[${this.moduleId}] Pack change detected but auto-rebuild disabled - index will be marked stale`);
+        return;
+      }
+
+      // Delete the index file to force rebuild
+      const filePath = this.getIndexFilePath();
+      
+      try {
+        // Check if file exists first by trying to browse to the world directory
+        const browseResult = await FilePicker.browse('data', `worlds/${game.world.id}`);
+        const fileExists = browseResult.files.some(f => f.endsWith(this.INDEX_FILENAME));
+        
+        if (fileExists) {
+          // File exists, delete it using fetch with DELETE method
+          const response = await fetch(filePath, { method: 'DELETE' });
+          if (response.ok) {
+            console.log(`[${this.moduleId}] Enhanced creature index file deleted, will rebuild on next access`);
+          } else {
+            console.log(`[${this.moduleId}] Could not delete index file, will rebuild over it on next access`);
+          }
+        } else {
+          console.log(`[${this.moduleId}] Enhanced creature index file does not exist`);
+        }
+      } catch (error) {
+        // File doesn't exist or deletion failed - that's okay
+        console.log(`[${this.moduleId}] Enhanced creature index invalidated (file operations failed, will rebuild on next access)`);
+      }
+    } catch (error) {
+      console.warn(`[${this.moduleId}] Failed to invalidate index:`, error);
+    }
+  }
+
+  /**
+   * Generate fingerprint for pack change detection with improved accuracy
+   */
+  private generatePackFingerprint(pack: any): PackFingerprint {
+    // Get actual modification time if available
+    let lastModified = Date.now();
+    if (pack.metadata.lastModified) {
+      lastModified = new Date(pack.metadata.lastModified).getTime();
+    }
+
+    return {
+      packId: pack.metadata.id,
+      packLabel: pack.metadata.label,
+      lastModified: lastModified,
+      documentCount: pack.index?.size || 0,
+      checksum: this.generatePackChecksum(pack)
+    };
+  }
+
+  /**
+   * Generate checksum for pack contents
+   */
+  private generatePackChecksum(pack: any): string {
+    // Simple checksum based on pack metadata and size
+    const data = `${pack.metadata.id}-${pack.metadata.label}-${pack.index?.size || 0}`;
+    return btoa(data).slice(0, 16); // Simple hash for demonstration
+  }
+
+  /**
+   * Compare two pack fingerprints
+   */
+  private fingerprintsMatch(current: PackFingerprint, saved: PackFingerprint): boolean {
+    return current.documentCount === saved.documentCount && 
+           current.checksum === saved.checksum;
+  }
+
+  /**
+   * Build enhanced creature index from all Actor packs with detailed progress tracking
+   */
+  private async buildEnhancedIndex(force = false): Promise<EnhancedCreatureIndex[]> {
+    if (this.buildInProgress && !force) {
+      throw new Error('Index build already in progress');
+    }
+
+    this.buildInProgress = true;
+    
+    const startTime = Date.now();
+    let progressNotification: any = null;
+    let totalErrors = 0; // Track extraction errors
+
+    try {
+      console.log(`[${this.moduleId}] Building enhanced creature index...`);
+      
+      const actorPacks = Array.from(game.packs.values()).filter(pack => pack.metadata.type === 'Actor');
+      const enhancedCreatures: EnhancedCreatureIndex[] = [];
+      const packFingerprints = new Map<string, PackFingerprint>();
+
+      // Show initial progress notification
+      ui.notifications?.info(`Starting enhanced creature index build from ${actorPacks.length} packs...`);
+
+      for (let i = 0; i < actorPacks.length; i++) {
+        const pack = actorPacks[i];
+        const progressPercent = Math.round((i / actorPacks.length) * 100);
+        
+        // Update progress notification every few packs or for important packs
+        if (i % 3 === 0 || pack.metadata.label.toLowerCase().includes('monster')) {
+          if (progressNotification) {
+            progressNotification.remove();
+          }
+          progressNotification = ui.notifications?.info(
+            `Building creature index... ${progressPercent}% (${i + 1}/${actorPacks.length}) Processing: ${pack.metadata.label}`
+          );
+        }
+
+        console.log(`[${this.moduleId}] Processing pack ${i + 1}/${actorPacks.length} (${progressPercent}%): ${pack.metadata.label}`);
+
+        try {
+          // Ensure pack index is loaded
+          if (!pack.indexed) {
+            console.log(`[${this.moduleId}] Loading index for ${pack.metadata.label}...`);
+            await pack.getIndex({});
+          }
+
+          // Generate pack fingerprint for change detection
+          packFingerprints.set(pack.metadata.id, this.generatePackFingerprint(pack));
+
+          // Show pack processing details for large packs
+          const packSize = pack.index?.size || 0;
+          if (packSize > 50) {
+            if (progressNotification) {
+              progressNotification.remove();
+            }
+            progressNotification = ui.notifications?.info(
+              `Processing large pack: ${pack.metadata.label} (${packSize} documents)...`
+            );
+          }
+
+          // Process creatures in this pack
+          const packResult = await this.extractEnhancedDataFromPack(pack);
+          enhancedCreatures.push(...packResult.creatures);
+          totalErrors += packResult.errors;
+
+          const errorText = packResult.errors > 0 ? ` (${packResult.errors} errors)` : '';
+          const packLog = `[${this.moduleId}] ✓ Pack ${i + 1}/${actorPacks.length}: ${pack.metadata.label} - ${packResult.creatures.length} creatures extracted${errorText} (${packSize} total documents)`;
+          console.log(packLog);
+
+          // Show milestone notifications for significant progress
+          if (i === 0 || (i + 1) % 5 === 0 || i === actorPacks.length - 1) {
+            const totalCreaturesSoFar = enhancedCreatures.length;
+            if (progressNotification) {
+              progressNotification.remove();
+            }
+            progressNotification = ui.notifications?.info(
+              `Index Progress: ${i + 1}/${actorPacks.length} packs complete, ${totalCreaturesSoFar} creatures indexed`
+            );
+          }
+
+        } catch (error) {
+          console.warn(`[${this.moduleId}] ⚠️ Failed to process pack ${pack.metadata.label}:`, error);
+          // Show error notification for pack failures
+          ui.notifications?.warn(`Warning: Failed to index pack "${pack.metadata.label}" - continuing with other packs`);
+        }
+      }
+
+      // Clear progress notification and show final processing step
+      if (progressNotification) {
+        progressNotification.remove();
+      }
+      ui.notifications?.info(`Saving enhanced index to world database... (${enhancedCreatures.length} creatures)`);
+
+      // Create persistent index structure
+      const persistentIndex: PersistentEnhancedIndex = {
+        metadata: {
+          version: this.INDEX_VERSION,
+          timestamp: Date.now(),
+          packFingerprints,
+          totalCreatures: enhancedCreatures.length
+        },
+        creatures: enhancedCreatures
+      };
+
+      // Save to world flags
+      await this.savePersistedIndex(persistentIndex);
+
+      const buildTimeSeconds = Math.round((Date.now() - startTime) / 1000);
+      const errorText = totalErrors > 0 ? ` (${totalErrors} extraction errors)` : '';
+      const successMessage = `Enhanced creature index complete! ${enhancedCreatures.length} creatures indexed from ${actorPacks.length} packs in ${buildTimeSeconds}s${errorText}`;
+      
+      console.log(`[${this.moduleId}] ${successMessage}`);
+      ui.notifications?.info(successMessage);
+
+      return enhancedCreatures;
+
+    } catch (error) {
+      // Clear any progress notifications on error
+      if (progressNotification) {
+        progressNotification.remove();
+      }
+      
+      const errorMessage = `Failed to build enhanced creature index: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      console.error(`[${this.moduleId}] ${errorMessage}`);
+      ui.notifications?.error(errorMessage);
+      
+      throw error;
+      
+    } finally {
+      this.buildInProgress = false;
+      
+      // Ensure progress notification is cleared
+      if (progressNotification) {
+        progressNotification.remove();
+      }
+    }
+  }
+
+  /**
+   * Extract enhanced data from all documents in a pack
+   */
+  private async extractEnhancedDataFromPack(pack: any): Promise<{ creatures: EnhancedCreatureIndex[], errors: number }> {
+    const creatures: EnhancedCreatureIndex[] = [];
+    let errors = 0;
+
+    try {
+      // Load all documents from pack
+      const documents = await pack.getDocuments();
+      
+      for (const doc of documents) {
+        try {
+          // Only process NPCs and characters
+          if (doc.type !== 'npc' && doc.type !== 'character') {
+            continue;
+          }
+
+          const result = this.extractEnhancedCreatureData(doc, pack);
+          if (result) {
+            creatures.push(result.creature);
+            errors += result.errors;
+          }
+
+        } catch (error) {
+          console.warn(`[${this.moduleId}] Failed to extract data from ${doc.name} in ${pack.metadata.label}:`, error);
+          errors++;
+        }
+      }
+
+    } catch (error) {
+      console.warn(`[${this.moduleId}] Failed to load documents from ${pack.metadata.label}:`, error);
+      errors++;
+    }
+
+    return { creatures, errors };
+  }
+
+  /**
+   * Extract enhanced creature data from a single document
+   */
+  private extractEnhancedCreatureData(doc: any, pack: any): { creature: EnhancedCreatureIndex, errors: number } | null {
+    try {
+      const system = doc.system || {};
+      
+      
+      // Extract challenge rating with comprehensive fallbacks
+      // Based on debug logs: system.details.cr contains the actual value
+      let challengeRating = system.details?.cr ?? 
+                           system.details?.cr?.value ?? 
+                           system.cr?.value ?? system.cr ?? 
+                           system.attributes?.cr?.value ?? system.attributes?.cr ??
+                           system.challenge?.rating ?? system.challenge?.cr ?? 0;
+      
+      // Handle null values (spell effects, etc.)
+      if (challengeRating === null || challengeRating === undefined) {
+        challengeRating = 0;
+      }
+      
+      if (typeof challengeRating === 'string') {
+        if (challengeRating === '1/8') challengeRating = 0.125;
+        else if (challengeRating === '1/4') challengeRating = 0.25;
+        else if (challengeRating === '1/2') challengeRating = 0.5;
+        else challengeRating = parseFloat(challengeRating) || 0;
+      }
+      
+      // Ensure it's a number
+      challengeRating = Number(challengeRating) || 0;
+
+      // Extract creature type with proper type checking
+      // Based on debug logs: system.details.type.value contains the actual value
+      let creatureType = system.details?.type?.value ?? 
+                         system.details?.type ?? 
+                         system.type?.value ?? system.type ?? 
+                         system.race?.value ?? system.race ??
+                         system.details?.race ?? 'unknown';
+      
+      // Handle null/undefined values properly
+      if (creatureType === null || creatureType === undefined || creatureType === '') {
+        creatureType = 'unknown';
+      }
+      
+      // Ensure creatureType is a string before calling toLowerCase()
+      if (typeof creatureType !== 'string') {
+        creatureType = String(creatureType || 'unknown');
+      }
+
+      // Extract size with proper type checking
+      let size = system.traits?.size?.value || system.traits?.size || 
+                 system.size?.value || system.size || 
+                 system.details?.size || 'medium';
+      
+      // Ensure size is a string
+      if (typeof size !== 'string') {
+        size = String(size || 'medium');
+      }
+
+      // Extract hit points with more fallbacks
+      const hitPoints = system.attributes?.hp?.max || system.hp?.max || 
+                       system.attributes?.hp?.value || system.hp?.value || 
+                       system.health?.max || system.health?.value || 0;
+
+      // Extract armor class with more fallbacks
+      const armorClass = system.attributes?.ac?.value || system.ac?.value || 
+                        system.attributes?.ac || system.ac || 
+                        system.armor?.value || system.armor || 10;
+
+      // Extract alignment with proper type checking
+      let alignment = system.details?.alignment?.value || system.details?.alignment || 
+                      system.alignment?.value || system.alignment || 'unaligned';
+      
+      // Ensure alignment is a string
+      if (typeof alignment !== 'string') {
+        alignment = String(alignment || 'unaligned');
+      }
+
+      // Check for spells with more comprehensive detection
+      const hasSpells = !!(system.spells || 
+                          system.attributes?.spellcasting || 
+                          (system.details?.spellLevel && system.details.spellLevel > 0) ||
+                          (system.resources?.spell && system.resources.spell.max > 0) ||
+                          system.spellcasting ||
+                          (system.traits?.spellcasting) ||
+                          (system.details?.spellcaster));
+
+      // Check for legendary actions with more comprehensive detection
+      const hasLegendaryActions = !!(system.resources?.legact || 
+                                    system.legendary || 
+                                    (system.resources?.legres && system.resources.legres.value > 0) ||
+                                    system.details?.legendary ||
+                                    system.traits?.legendary ||
+                                    (system.resources?.legendary && system.resources.legendary.max > 0));
+
+      // DEBUG: Log what we extracted for comparison
+
+      // Successful extraction
+      return {
+        creature: {
+          id: doc._id,
+          name: doc.name,
+          type: doc.type,
+          pack: pack.metadata.id,
+          packLabel: pack.metadata.label,
+          challengeRating: challengeRating,
+          creatureType: creatureType.toLowerCase(),
+          size: size.toLowerCase(),
+          hitPoints: hitPoints,
+          armorClass: armorClass,
+          hasSpells: hasSpells,
+          hasLegendaryActions: hasLegendaryActions,
+          alignment: alignment.toLowerCase(),
+          description: doc.system?.details?.biography || doc.system?.description || '',
+          img: doc.img
+        },
+        errors: 0
+      };
+
+    } catch (error) {
+      console.warn(`[${this.moduleId}] Failed to extract enhanced data from ${doc.name}:`, error);
+      
+      // Return a basic fallback record with error count instead of null to avoid losing creatures
+      return {
+        creature: {
+          id: doc._id,
+          name: doc.name,
+          type: doc.type,
+          pack: pack.metadata.id,
+          packLabel: pack.metadata.label,
+          challengeRating: 0,
+          creatureType: 'unknown',
+          size: 'medium',
+          hitPoints: 1,
+          armorClass: 10,
+          hasSpells: false,
+          hasLegendaryActions: false,
+          alignment: 'unaligned',
+          description: 'Data extraction failed',
+          img: doc.img || ''
+        },
+        errors: 1
+      };
+    }
+  }
+}
+
 export class FoundryDataAccess {
   private moduleId: string = MODULE_ID;
+  private persistentIndex: PersistentCreatureIndex = new PersistentCreatureIndex();
 
   constructor() {}
+
+  /**
+   * Force rebuild of enhanced creature index
+   */
+  async rebuildEnhancedCreatureIndex(): Promise<{ success: boolean; totalCreatures: number; message: string }> {
+    try {
+      const creatures = await this.persistentIndex.rebuildIndex();
+      return {
+        success: true,
+        totalCreatures: creatures.length,
+        message: `Enhanced creature index rebuilt: ${creatures.length} creatures indexed from all packs`
+      };
+    } catch (error) {
+      console.error(`[${this.moduleId}] Failed to rebuild enhanced creature index:`, error);
+      return {
+        success: false,
+        totalCreatures: 0,
+        message: `Failed to rebuild index: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
+  }
 
   /**
    * Check if user has permission for a specific data access type
@@ -254,6 +941,63 @@ export class FoundryDataAccess {
       throw new Error('Search query must be a string with at least 2 characters');
     }
 
+    // ENHANCED SEARCH: If we have creature-specific filters and Actor packType, use enhanced index
+    if (filters && packType === 'Actor' && 
+        (filters.challengeRating || filters.creatureType || filters.hasLegendaryActions)) {
+      
+      console.log(`[${this.moduleId}] searchCompendium redirecting to enhanced index search for query "${query}" with filters:`, filters);
+      
+      // Check if enhanced creature index is enabled
+      const enhancedIndexEnabled = game.settings.get(this.moduleId, 'enableEnhancedCreatureIndex');
+      
+      if (enhancedIndexEnabled) {
+        try {
+          // Convert search criteria and use enhanced search
+          const criteria: any = { limit: 100 }; // Default limit for search
+          
+          if (filters.challengeRating) criteria.challengeRating = filters.challengeRating;
+          if (filters.creatureType) criteria.creatureType = filters.creatureType;
+          if (filters.size) criteria.size = filters.size;
+          if (filters.hasLegendaryActions) criteria.hasLegendaryActions = filters.hasLegendaryActions;
+          
+          const enhancedResult = await this.listCreaturesByCriteria(criteria);
+          
+          // Filter results by name query
+          const filteredResults = enhancedResult.creatures.filter(creature => 
+            creature.name.toLowerCase().includes(query.toLowerCase())
+          );
+          
+          console.log(`[${this.moduleId}] Enhanced search found ${filteredResults.length} results for "${query}"`);
+          
+          // Convert to CompendiumSearchResult format
+          return filteredResults.map(creature => ({
+            id: creature.id || creature.name,
+            name: creature.name,
+            type: creature.type || 'npc',
+            pack: creature.pack,
+            packLabel: creature.packLabel || creature.pack,
+            description: creature.description || '',
+            hasImage: creature.hasImage || !!creature.img,
+            summary: `CR ${creature.challengeRating} ${creature.creatureType} from ${creature.packLabel}`,
+            // Enhanced data (not part of interface but will be included)
+            challengeRating: creature.challengeRating,
+            creatureType: creature.creatureType,
+            size: creature.size,
+            hasLegendaryActions: creature.hasLegendaryActions
+          } as CompendiumSearchResult & {
+            challengeRating: number;
+            creatureType: string;
+            size: string;
+            hasLegendaryActions: boolean;
+          }));
+          
+        } catch (error) {
+          console.warn(`[${this.moduleId}] Enhanced search failed, falling back to basic search:`, error);
+          // Continue to basic search below
+        }
+      }
+    }
+
     const results: CompendiumSearchResult[] = [];
     const cleanQuery = query.toLowerCase().trim();
     const searchTerms = cleanQuery.split(' ').filter(term => term && typeof term === 'string' && term.length > 0);
@@ -274,14 +1018,17 @@ export class FoundryDataAccess {
       try {
         // Ensure pack index is loaded
         if (!pack.indexed) {
-          await pack.getIndex();
+          await pack.getIndex({});
         }
 
-        // Search through pack entries
-        for (const entry of pack.index.values()) {
+        // Use basic compendium index for all searches
+        const entriesToSearch = Array.from(pack.index.values());
+        
+        for (const entry of entriesToSearch) {
           try {
-            // Add comprehensive safety checks for entry properties
-            if (!entry || !entry.name || typeof entry.name !== 'string' || entry.name.trim().length === 0) {
+            // Type assertion and comprehensive safety checks for entry properties
+            const typedEntry = entry as any;
+            if (!typedEntry || !typedEntry.name || typeof typedEntry.name !== 'string' || typedEntry.name.trim().length === 0) {
               continue;
             }
 
@@ -290,8 +1037,9 @@ export class FoundryDataAccess {
               continue;
             }
 
-            // Safe name matching with additional null checks
-            const entryNameLower = entry.name.toLowerCase();
+            // Use already created typedEntry
+            
+            const entryNameLower = typedEntry.name.toLowerCase();
             const nameMatch = searchTerms.every(term => {
               if (!term || typeof term !== 'string') {
                 return false;
@@ -300,21 +1048,51 @@ export class FoundryDataAccess {
             });
 
             if (nameMatch) {
-              // Apply filters if specified (primarily for Actor/NPC entries)
-              if (filters && this.shouldApplyFilters(entry, filters)) {
-                if (!this.passesFilters(entry, filters)) {
-                  continue; // Skip this entry if it doesn't pass filters
+              // For Actor packs with filters, use simple name/description matching
+              if (filters && this.shouldApplyFilters(entry, filters) && pack.metadata.type === 'Actor') {
+                // Convert filters to search criteria for compatibility
+                const searchCriteria: any = {};
+                
+                if (filters.challengeRating) {
+                  const searchTerms = [];
+                  if (typeof filters.challengeRating === 'number') {
+                    if (filters.challengeRating >= 15) {
+                      searchTerms.push('ancient', 'legendary', 'elder', 'greater');
+                    } else if (filters.challengeRating >= 10) {
+                      searchTerms.push('adult', 'warlord', 'champion', 'master');
+                    } else if (filters.challengeRating >= 5) {
+                      searchTerms.push('captain', 'knight', 'priest', 'mage');
+                    } else {
+                      searchTerms.push('guard', 'soldier', 'warrior', 'scout');
+                    }
+                  }
+                  searchCriteria.searchTerms = searchTerms;
+                }
+                
+                if (filters.creatureType) {
+                  const typeTerms = [filters.creatureType];
+                  if (filters.creatureType.toLowerCase() === 'humanoid') {
+                    typeTerms.push('human', 'elf', 'dwarf', 'orc', 'goblin');
+                  }
+                  searchCriteria.searchTerms = [...(searchCriteria.searchTerms || []), ...typeTerms];
+                }
+                
+                if (!this.matchesSearchCriteria(typedEntry, searchCriteria)) {
+                  continue;
                 }
               }
 
+              // Standard index entry result
               results.push({
-                id: entry._id || '',
-                name: entry.name,
-                type: entry.type || 'unknown',
-                img: entry.img || undefined,
+                id: typedEntry._id || '',
+                name: typedEntry.name,
+                type: typedEntry.type || 'unknown',
+                img: typedEntry.img || undefined,
                 pack: pack.metadata.id,
                 packLabel: pack.metadata.label,
-                system: entry.system ? this.sanitizeData(entry.system) : undefined,
+                description: typedEntry.description || '',
+                hasImage: !!typedEntry.img,
+                summary: `${typedEntry.type} from ${pack.metadata.label}`,
               });
             }
           } catch (entryError) {
@@ -371,7 +1149,9 @@ export class FoundryDataAccess {
 
   /**
    * Check if entry passes all specified filters
+   * @unused - Replaced with simple index-only approach
    */
+  // @ts-ignore - Unused method kept for compatibility
   private passesFilters(entry: any, filters: {
     challengeRating?: number | { min?: number; max?: number };
     creatureType?: string;
@@ -388,9 +1168,19 @@ export class FoundryDataAccess {
       filters: filters
     });
 
+
     // Challenge Rating filter
     if (filters.challengeRating !== undefined) {
-      const entryCR = system.details?.cr || system.cr || 0;
+      // Try multiple possible CR locations in D&D 5e data structure
+      let entryCR = system.details?.cr?.value || system.details?.cr || system.cr?.value || system.cr || 0;
+      
+      // Handle fractional CRs (common in D&D 5e)
+      if (typeof entryCR === 'string') {
+        if (entryCR === '1/8') entryCR = 0.125;
+        else if (entryCR === '1/4') entryCR = 0.25;
+        else if (entryCR === '1/2') entryCR = 0.5;
+        else entryCR = parseFloat(entryCR) || 0;
+      }
       
       if (typeof filters.challengeRating === 'number') {
         // Exact CR match
@@ -516,7 +1306,7 @@ export class FoundryDataAccess {
   }
 
   /**
-   * List creatures by criteria - optimized for discovery with minimal data
+   * List creatures by criteria using enhanced persistent index - optimized for instant filtering
    */
   async listCreaturesByCriteria(criteria: {
     challengeRating?: number | { min?: number; max?: number };
@@ -528,150 +1318,234 @@ export class FoundryDataAccess {
   }): Promise<{creatures: any[], searchSummary: any}> {
     this.checkPermission('allowCompendiumAccess');
 
-    const results: any[] = [];
     const limit = criteria.limit || 500;
 
-    // Filter packs to only Actor packs (creatures/NPCs) and prioritize by likelihood
-    const actorPacks = Array.from(game.packs.values()).filter(pack => {
-      return pack.metadata.type === 'Actor';
-    });
+    // Check if enhanced creature index is enabled
+    const enhancedIndexEnabled = game.settings.get(this.moduleId, 'enableEnhancedCreatureIndex');
 
-    // Prioritize packs by likelihood of containing relevant creatures
-    const packs = this.prioritizePacksForCreatures(actorPacks);
+    if (!enhancedIndexEnabled) {
+      console.log(`[${this.moduleId}] Enhanced creature index disabled, falling back to basic search`);
+      return this.fallbackBasicCreatureSearch(criteria, limit);
+    }
 
-    console.log(`[${this.moduleId}] Scanning ${packs.length} Actor packs for creatures with criteria (prioritized order):`, criteria);
-
-    for (const pack of packs) {
-      try {
-        // Ensure pack index is loaded
-        if (!pack.indexed) {
-          await pack.getIndex();
-        }
-
-        // Process each entry with debug info
-        let packEntryCount = 0;
-        let packMatchCount = 0;
-        for (const entry of pack.index.values()) {
-          try {
-            packEntryCount++;
-            
-            // Only process NPC/character type actors
-            if (entry.type !== 'npc' && entry.type !== 'character') {
-              continue;
-            }
-
-            // Apply criteria filters
-            if (!this.passesCriteria(entry, criteria)) {
-              continue;
-            }
-            
-            packMatchCount++;
-            console.log(`[${this.moduleId}] MATCH FOUND: ${entry.name} in pack ${pack.metadata.label}`);
-            
-            // Log first match details for debugging
-            if (packMatchCount === 1) {
-              console.log(`[${this.moduleId}] First match details:`, {
-                name: entry.name,
-                type: entry.type,
-                system: entry.system ? 'present' : 'missing',
-                cr: entry.system?.details?.cr || entry.system?.cr,
-                creatureType: entry.system?.details?.type?.value || entry.system?.type?.value
-              });
-            }
-
-            results.push({
-              id: entry._id || '',
-              name: entry.name,
-              type: entry.type,
-              pack: pack.metadata.id,
-              packLabel: pack.metadata.label,
-              system: entry.system ? this.sanitizeData(entry.system) : undefined,
-            });
-
-            // Stop if we've hit the limit
-            if (results.length >= limit) break;
-
-          } catch (entryError) {
-            console.warn(`[${this.moduleId}] Error processing entry in pack ${pack.metadata.id}:`, entryError);
-            continue;
-          }
-        }
-        
-        console.log(`[${this.moduleId}] Pack ${pack.metadata.label}: ${packEntryCount} entries, ${packMatchCount} matches`);
-        
-      } catch (error) {
-        console.warn(`[${this.moduleId}] Failed to process pack ${pack.metadata.id}:`, error);
+    try {
+      console.log(`[${this.moduleId}] Using enhanced persistent index for creature search with criteria:`, criteria);
+      
+      // Get enhanced creature index (builds if needed)
+      const enhancedCreatures = await this.persistentIndex.getEnhancedIndex();
+      console.log(`[${this.moduleId}] Enhanced index loaded: ${enhancedCreatures.length} creatures available`);
+      
+      // DEBUG: Log sample creature data to verify what we're getting
+      if (enhancedCreatures.length > 0) {
+        const sampleCreature = enhancedCreatures[0];
+        console.log(`[${this.moduleId}] DEBUG - Sample creature from enhanced index:`, {
+          name: sampleCreature.name,
+          challengeRating: sampleCreature.challengeRating,
+          creatureType: sampleCreature.creatureType,
+          size: sampleCreature.size
+        });
       }
 
-      // Global limit check
-      if (results.length >= limit) break;
+      // Apply filters to enhanced data
+      let filteredCreatures = enhancedCreatures.filter(creature => this.passesEnhancedCriteria(creature, criteria));
+
+      console.log(`[${this.moduleId}] After filtering: ${filteredCreatures.length} creatures match criteria`);
+
+      // Sort by CR then name for consistent ordering
+      filteredCreatures.sort((a, b) => {
+        if (a.challengeRating !== b.challengeRating) {
+          return a.challengeRating - b.challengeRating; // Lower CR first
+        }
+        return a.name.localeCompare(b.name);
+      });
+
+      // Apply limit
+      if (filteredCreatures.length > limit) {
+        filteredCreatures = filteredCreatures.slice(0, limit);
+        console.log(`[${this.moduleId}] Applied limit: showing first ${limit} of ${filteredCreatures.length} matches`);
+      }
+
+      // Convert enhanced creatures to result format
+      const results = filteredCreatures.map(creature => ({
+        id: creature.id,
+        name: creature.name,
+        type: creature.type,
+        pack: creature.pack,
+        packLabel: creature.packLabel,
+        description: creature.description || '',
+        hasImage: !!creature.img,
+        summary: `CR ${creature.challengeRating} ${creature.creatureType} from ${creature.packLabel}`,
+        // Include enhanced data for better sorting and display
+        challengeRating: creature.challengeRating,
+        creatureType: creature.creatureType,
+        size: creature.size,
+        hitPoints: creature.hitPoints,
+        armorClass: creature.armorClass,
+        hasSpells: creature.hasSpells,
+        hasLegendaryActions: creature.hasLegendaryActions,
+        alignment: creature.alignment
+      }));
+
+      // Calculate pack distribution for summary
+      const packResults = new Map();
+      results.forEach(creature => {
+        const count = packResults.get(creature.packLabel) || 0;
+        packResults.set(creature.packLabel, count + 1);
+      });
+
+      // Get unique pack information
+      const uniquePacks = Array.from(new Set(enhancedCreatures.map(c => c.pack)));
+      const topPacks = uniquePacks.slice(0, 5).map(packId => {
+        const sampleCreature = enhancedCreatures.find(c => c.pack === packId);
+        return {
+          id: packId,
+          label: sampleCreature?.packLabel || 'Unknown Pack',
+          priority: 100 // All packs are prioritized equally in enhanced index
+        };
+      });
+
+      console.log(`[${this.moduleId}] Enhanced search complete: ${results.length} creatures found`);
+      if (packResults.size > 0) {
+        console.log(`[${this.moduleId}] Results by pack:`, Object.fromEntries(packResults));
+      }
+
+      // DEBUG: Log what we're actually returning
+      console.log(`[${this.moduleId}] DEBUG - Final results being returned:`, {
+        sampleResult: results[0] ? {
+          name: results[0].name,
+          challengeRating: results[0].challengeRating,
+          creatureType: results[0].creatureType,
+          pack: results[0].pack,
+          packLabel: results[0].packLabel
+        } : null,
+        totalResults: results.length
+      });
+
+      return {
+        creatures: results,
+        searchSummary: {
+          packsSearched: uniquePacks.length,
+          topPacks,
+          totalCreaturesFound: results.length,
+          resultsByPack: Object.fromEntries(packResults),
+          criteria: criteria,
+          indexMetadata: {
+            totalIndexedCreatures: enhancedCreatures.length,
+            searchMethod: 'enhanced_persistent_index'
+          }
+        }
+      };
+
+    } catch (error) {
+      console.error(`[${this.moduleId}] Enhanced creature search failed:`, error);
+      // Fallback to basic search if enhanced index fails
+      return this.fallbackBasicCreatureSearch(criteria, limit);
+    }
+  }
+
+  /**
+   * Check if enhanced creature passes all specified criteria
+   */
+  private passesEnhancedCriteria(creature: EnhancedCreatureIndex, criteria: {
+    challengeRating?: number | { min?: number; max?: number };
+    creatureType?: string;
+    size?: string;
+    hasSpells?: boolean;
+    hasLegendaryActions?: boolean;
+  }): boolean {
+    
+    // Challenge Rating filter
+    if (criteria.challengeRating !== undefined) {
+      if (typeof criteria.challengeRating === 'number') {
+        if (creature.challengeRating !== criteria.challengeRating) {
+          return false;
+        }
+      } else if (typeof criteria.challengeRating === 'object') {
+        const { min, max } = criteria.challengeRating;
+        if (min !== undefined && creature.challengeRating < min) {
+          return false;
+        }
+        if (max !== undefined && creature.challengeRating > max) {
+          return false;
+        }
+      }
     }
 
-    // Gather pack information for transparency
-    const packsSearched = packs.length;
-    const priorityOrder = [
-      // Tier 1: Core D&D 5e content (highest priority)
-      { pattern: /^dnd5e\.monsters/, priority: 100 },           // Core D&D 5e monsters 
-      { pattern: /^dnd5e\.actors/, priority: 95 },             // Core D&D 5e actors
-      { pattern: /ddb.*monsters/i, priority: 90 },             // D&D Beyond monsters
-      
-      // Tier 2: Official modules and supplements
-      { pattern: /^world\..*ddb.*monsters/i, priority: 85 },   // World-specific DDB monsters
-      { pattern: /monsters/i, priority: 80 },                  // Any pack with "monsters"
-      
-      // Tier 3: Campaign and adventure content
-      { pattern: /^world\.(?!.*summon|.*hero)/i, priority: 70 }, // World packs (not summons/heroes)
-      
-      // Tier 4: Specialized content
-      { pattern: /summon|familiar/i, priority: 40 },           // Summons and familiars
-      
-      // Tier 5: Unlikely to contain monsters (lowest priority) 
-      { pattern: /hero|player|pc/i, priority: 10 },            // Player characters
-    ];
-    
-    const topPacks = packs.slice(0, 5).map(pack => ({
-      id: pack.metadata.id,
-      label: pack.metadata.label,
-      priority: this.getPackPriority(pack.metadata.id, pack.metadata.label, priorityOrder)
-    }));
-
-    console.log(`[${this.moduleId}] Found ${results.length} creatures matching criteria from ${packsSearched} packs`);
-    
-    // Log pack search results for transparency
-    const packResults = new Map();
-    results.forEach(creature => {
-      const count = packResults.get(creature.packLabel) || 0;
-      packResults.set(creature.packLabel, count + 1);
-    });
-    
-    if (packResults.size > 0) {
-      console.log(`[${this.moduleId}] Results by pack:`, Object.fromEntries(packResults));
+    // Creature Type filter
+    if (criteria.creatureType) {
+      if (creature.creatureType.toLowerCase() !== criteria.creatureType.toLowerCase()) {
+        return false;
+      }
     }
 
-    // Sort by CR then name for consistent ordering
-    results.sort((a, b) => {
-      const aCR = a.system?.details?.cr || a.system?.cr || 0;
-      const bCR = b.system?.details?.cr || b.system?.cr || 0;
-      
-      if (aCR !== bCR) return aCR - bCR; // Lower CR first
-      return a.name.localeCompare(b.name);
-    });
+    // Size filter
+    if (criteria.size) {
+      if (creature.size.toLowerCase() !== criteria.size.toLowerCase()) {
+        return false;
+      }
+    }
 
+    // Spellcaster filter
+    if (criteria.hasSpells !== undefined) {
+      if (creature.hasSpells !== criteria.hasSpells) {
+        return false;
+      }
+    }
+
+    // Legendary Actions filter
+    if (criteria.hasLegendaryActions !== undefined) {
+      if (creature.hasLegendaryActions !== criteria.hasLegendaryActions) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Fallback to basic creature search if enhanced index fails
+   */
+  private async fallbackBasicCreatureSearch(criteria: any, limit: number): Promise<{creatures: any[], searchSummary: any}> {
+    console.warn(`[${this.moduleId}] Falling back to basic search due to enhanced index failure`);
+    
+    // Use a simple text-based search as fallback
+    const searchTerms: string[] = [];
+    
+    if (criteria.creatureType) {
+      searchTerms.push(criteria.creatureType);
+    }
+    
+    if (criteria.challengeRating) {
+      if (typeof criteria.challengeRating === 'number') {
+        // Add CR-based name patterns as fallback
+        if (criteria.challengeRating >= 15) searchTerms.push('ancient', 'legendary');
+        else if (criteria.challengeRating >= 10) searchTerms.push('adult', 'champion');
+        else if (criteria.challengeRating >= 5) searchTerms.push('captain', 'knight');
+      }
+    }
+    
+    const searchQuery = searchTerms.join(' ') || 'monster';
+    const basicResults = await this.searchCompendium(searchQuery, 'Actor');
+    
     return {
-      creatures: results,
+      creatures: basicResults.slice(0, limit),
       searchSummary: {
-        packsSearched,
-        topPacks,
-        totalCreaturesFound: results.length,
-        resultsByPack: Object.fromEntries(packResults),
-        criteria: criteria
+        packsSearched: 0,
+        topPacks: [],
+        totalCreaturesFound: basicResults.length,
+        resultsByPack: {},
+        criteria: criteria,
+        fallback: true,
+        searchMethod: 'basic_fallback'
       }
     };
   }
 
   /**
    * Prioritize compendium packs by likelihood of containing relevant creatures
+   * @unused - Replaced by enhanced persistent index system
    */
+  // @ts-ignore - Unused method kept for compatibility
   private prioritizePacksForCreatures(packs: any[]): any[] {
     const priorityOrder = [
       // Tier 1: Core D&D 5e content (highest priority)
@@ -721,7 +1595,9 @@ export class FoundryDataAccess {
 
   /**
    * Check if creature entry passes the given criteria
+   * @unused - Legacy method replaced by passesEnhancedCriteria
    */
+  // @ts-ignore - Legacy method kept for compatibility
   private passesCriteria(entry: any, criteria: {
     challengeRating?: number | { min?: number; max?: number };
     creatureType?: string;
@@ -732,17 +1608,18 @@ export class FoundryDataAccess {
     const system = entry.system || {};
 
     // DEBUG: Log entry structure for first few entries
-    if (Math.random() < 0.1) { // 10% sampling to avoid spam
+    if (Math.random() < 0.01) { // 1% sampling to avoid spam
       console.log(`[${this.moduleId}] DEBUG Entry:`, {
         name: entry.name,
         type: entry.type,
         systemKeys: Object.keys(system),
-        cr: system.details?.cr || system.cr,
-        crValue: system.details?.cr?.value || system.details?.cr,
-        creatureType: system.details?.type?.value || system.type?.value,
-        systemStructure: {
-          details: system.details ? Object.keys(system.details) : 'none',
-          attributes: system.attributes ? Object.keys(system.attributes) : 'none'
+        crExtractionAttempts: {
+          'system.details?.cr?.value': system.details?.cr?.value,
+          'system.details?.cr': system.details?.cr,
+          'system.cr?.value': system.cr?.value,
+          'system.cr': system.cr,
+          'system.attributes?.cr': system.attributes?.cr,
+          'system.challenge': system.challenge
         }
       });
     }
@@ -802,6 +1679,43 @@ export class FoundryDataAccess {
       const hasLegendary = !!(system.resources?.legact || system.legendary || 
                              (system.resources?.legres && system.resources.legres.value > 0));
       if (hasLegendary !== criteria.hasLegendaryActions) return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Simple name/description-based matching for creatures using index data only
+   */
+  private matchesSearchCriteria(entry: any, criteria: {
+    searchTerms?: string[];
+    excludeTerms?: string[];
+    size?: string;
+    hasSpells?: boolean;
+    hasLegendaryActions?: boolean;
+  }): boolean {
+    const name = (entry.name || '').toLowerCase();
+    const description = (entry.description || '').toLowerCase();
+    const searchText = `${name} ${description}`;
+
+    // Include terms - at least one must match
+    if (criteria.searchTerms && criteria.searchTerms.length > 0) {
+      const hasMatch = criteria.searchTerms.some(term => 
+        searchText.includes(term.toLowerCase())
+      );
+      if (!hasMatch) {
+        return false;
+      }
+    }
+
+    // Exclude terms - none should match
+    if (criteria.excludeTerms && criteria.excludeTerms.length > 0) {
+      const hasExcluded = criteria.excludeTerms.some(term => 
+        searchText.includes(term.toLowerCase())
+      );
+      if (hasExcluded) {
+        return false;
+      }
     }
 
     return true;
