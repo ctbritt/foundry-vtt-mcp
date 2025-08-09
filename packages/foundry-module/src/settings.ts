@@ -1,6 +1,5 @@
 import { MODULE_ID, DEFAULT_CONFIG } from './constants.js';
 import type { BridgeConfig } from './socket-bridge.js';
-import { MCPConnectionSettingsForm } from './connection-settings-form.js';
 
 export class ModuleSettings {
   private moduleId: string = MODULE_ID;
@@ -13,13 +12,48 @@ export class ModuleSettings {
     // SETTINGS MENU - Detailed Configuration Dialog
     // ============================================================================
     
-    (game.settings as any).registerMenu(this.moduleId, 'connectionSettings', {
-      name: 'Connection & Permissions',
-      label: 'Configure MCP Bridge',
-      hint: 'Open detailed configuration panel for Claude Desktop connection, permissions, and safety settings',
-      icon: 'fas fa-cogs',
-      type: MCPConnectionSettingsForm,
-      restricted: true // GM only
+    // Enhanced Creature Index submenu
+    (game.settings as any).registerMenu(this.moduleId, 'enhancedIndexMenu', {
+      name: 'Enhanced Creature Index',
+      label: 'Configure Enhanced Index',
+      hint: 'The Enhanced Creature Index pre-computes creature statistics for instant filtering by Challenge Rating, creature type, and abilities. This enables Claude to quickly find creatures matching specific criteria without loading every compendium entry.',
+      icon: 'fas fa-search-plus',
+      type: class extends FormApplication {
+        static get defaultOptions() {
+          return foundry.utils.mergeObject(super.defaultOptions, {
+            title: "Enhanced Creature Index Settings",
+            template: `modules/${MODULE_ID}/templates/enhanced-index-menu.html`,
+            width: 500,
+            height: 'auto',
+            resizable: false,
+            closeOnSubmit: false
+          } as any);
+        }
+        
+        getData(): any {
+          return {
+            enableEnhancedCreatureIndex: game.settings.get(MODULE_ID, 'enableEnhancedCreatureIndex'),
+            autoRebuildIndex: game.settings.get(MODULE_ID, 'autoRebuildIndex')
+          };
+        }
+        
+        activateListeners(html: JQuery) {
+          super.activateListeners(html);
+          html.find('.rebuild-index-btn').click(() => {
+            const bridge = (globalThis as any).foundryMCPBridge;
+            if (bridge?.dataAccess?.rebuildEnhancedCreatureIndex) {
+              ui.notifications?.info('Rebuilding enhanced creature index...');
+              bridge.dataAccess.rebuildEnhancedCreatureIndex();
+            }
+          });
+        }
+        
+        async _updateObject(_event: Event, formData: any) {
+          await game.settings.set(MODULE_ID, 'enableEnhancedCreatureIndex', formData.enableEnhancedCreatureIndex);
+          await game.settings.set(MODULE_ID, 'autoRebuildIndex', formData.autoRebuildIndex);
+        }
+      },
+      restricted: true
     });
 
     // ============================================================================
@@ -56,61 +90,18 @@ export class ModuleSettings {
       onChange: this.onConnectionChange.bind(this),
     });
 
-    game.settings.register(this.moduleId, 'namespace', {
-      name: 'Connection Namespace',
-      hint: 'Socket.io namespace for MCP communication (advanced users only)',
-      scope: 'world',
-      config: true,
-      type: String,
-      default: '/foundry-mcp',
-    });
 
     // ============================================================================
-    // SECTION 2: PERMISSIONS - What Claude Can Access
+    // SECTION 2: WRITE PERMISSIONS
     // ============================================================================
-    game.settings.register(this.moduleId, 'allowCharacterAccess', {
-      name: 'Allow Character Reading',
-      hint: 'Let Claude read character sheets, stats, and abilities',
+    
+    game.settings.register(this.moduleId, 'allowWriteOperations', {
+      name: 'Allow Write Operations',
+      hint: 'Let Claude create actors, NPCs, and modify world content. Reading is always allowed.',
       scope: 'world',
       config: true,
       type: Boolean,
       default: true,
-    });
-
-    game.settings.register(this.moduleId, 'allowCompendiumAccess', {
-      name: 'Allow Compendium Search',
-      hint: 'Let Claude search through compendium packs (spells, monsters, items)',
-      scope: 'world',
-      config: true,
-      type: Boolean,
-      default: true,
-    });
-
-    game.settings.register(this.moduleId, 'allowSceneAccess', {
-      name: 'Allow Scene Reading',
-      hint: 'Let Claude read scene information (tokens, walls, lighting, etc.)',
-      scope: 'world',
-      config: true,
-      type: Boolean,
-      default: false,
-    });
-
-    game.settings.register(this.moduleId, 'allowActorCreation', {
-      name: 'Allow Creating Actors/NPCs',
-      hint: 'Let Claude create new actors and NPCs from compendium entries',
-      scope: 'world',
-      config: true,
-      type: Boolean,
-      default: true,
-    });
-
-    game.settings.register(this.moduleId, 'allowSceneModification', {
-      name: 'Allow Scene Modifications',
-      hint: 'Let Claude add tokens to scenes and modify scene contents',
-      scope: 'world',
-      config: true,
-      type: Boolean,
-      default: false,
     });
 
     // ============================================================================
@@ -123,21 +114,12 @@ export class ModuleSettings {
       scope: 'world',
       config: true,
       type: Number,
-      default: 5,
+      default: 10,
       range: {
         min: 1,
-        max: 10,
+        max: 50,
         step: 1,
       },
-    });
-
-    game.settings.register(this.moduleId, 'requireConfirmationForBulk', {
-      name: 'Require Bulk Operation Confirmation',
-      hint: 'Ask for confirmation before creating multiple actors at once',
-      scope: 'world',
-      config: true,
-      type: Boolean,
-      default: false,
     });
 
     game.settings.register(this.moduleId, 'enableWriteAuditLog', {
@@ -149,23 +131,24 @@ export class ModuleSettings {
       default: true,
     });
 
-    // ============================================================================
-    // SECTION 4: CONNECTION BEHAVIOR - How the Bridge Works
-    // ============================================================================
-    game.settings.register(this.moduleId, 'connectionMode', {
-      name: 'Connection Behavior',
-      hint: 'How the bridge connects to Claude Desktop',
+    // Enhanced Creature Index settings (configured via submenu only)
+    game.settings.register(this.moduleId, 'enableEnhancedCreatureIndex', {
       scope: 'world',
-      config: true,
-      type: String,
-      choices: {
-        'automatic': 'Connect automatically when Foundry starts',
-        'manual': 'Connect manually using connection panel',
-        'on-demand': 'Connect only when Claude tries to use a tool'
-      },
-      default: 'automatic',
-      onChange: this.onConnectionChange.bind(this),
+      config: false, // Hidden from main config, accessible via submenu only
+      type: Boolean,
+      default: true,
     });
+
+    game.settings.register(this.moduleId, 'autoRebuildIndex', {
+      scope: 'world',
+      config: false, // Hidden from main config, accessible via submenu only
+      type: Boolean,
+      default: true,
+    });
+
+    // ============================================================================
+    // SECTION 4: CONNECTION BEHAVIOR
+    // ============================================================================
 
     game.settings.register(this.moduleId, 'enableNotifications', {
       name: 'Show Connection Messages',
@@ -246,7 +229,7 @@ export class ModuleSettings {
       enabled: this.getSetting('enabled'),
       serverHost: this.getSetting('serverHost'),
       serverPort: this.getSetting('serverPort'),
-      namespace: this.getSetting('namespace'),
+      namespace: '/foundry-mcp', // Fixed namespace - no user configuration needed
       reconnectAttempts: DEFAULT_CONFIG.RECONNECT_ATTEMPTS, // Use sensible default
       reconnectDelay: DEFAULT_CONFIG.RECONNECT_DELAY, // Use sensible default
       connectionTimeout: DEFAULT_CONFIG.CONNECTION_TIMEOUT, // Use sensible default
@@ -274,14 +257,15 @@ export class ModuleSettings {
   getAllSettings(): Record<string, any> {
     const settingKeys = [
       // Basic Settings
-      'enabled', 'serverHost', 'serverPort', 'namespace',
+      'enabled', 'serverHost', 'serverPort',
       // Permissions
-      'allowCharacterAccess', 'allowCompendiumAccess', 'allowSceneAccess',
-      'allowActorCreation', 'allowSceneModification', 
+      'allowWriteOperations',
       // Safety Controls
-      'maxActorsPerRequest', 'requireConfirmationForBulk', 'enableWriteAuditLog',
+      'maxActorsPerRequest', 'enableWriteAuditLog',
+      // Enhanced Creature Index
+      'enableEnhancedCreatureIndex', 'autoRebuildIndex',
       // Connection Behavior
-      'connectionMode', 'enableNotifications', 'autoReconnectEnabled', 'heartbeatInterval'
+      'enableNotifications', 'autoReconnectEnabled', 'heartbeatInterval'
     ];
 
     const settings: Record<string, any> = {};
@@ -352,6 +336,7 @@ export class ModuleSettings {
     }
   }
 
+
   /**
    * Create settings migration for version updates
    */
@@ -359,17 +344,13 @@ export class ModuleSettings {
    * Get write operation permissions
    */
   getWritePermissions(): {
-    allowActorCreation: boolean;
-    allowSceneModification: boolean;
+    allowWriteOperations: boolean;
     maxActorsPerRequest: number;
-    requireConfirmationForBulk: boolean;
     enableWriteAuditLog: boolean;
   } {
     return {
-      allowActorCreation: this.getSetting('allowActorCreation'),
-      allowSceneModification: this.getSetting('allowSceneModification'),
+      allowWriteOperations: this.getSetting('allowWriteOperations'),
       maxActorsPerRequest: this.getSetting('maxActorsPerRequest'),
-      requireConfirmationForBulk: this.getSetting('requireConfirmationForBulk'),
       enableWriteAuditLog: this.getSetting('enableWriteAuditLog'),
     };
   }
@@ -377,16 +358,9 @@ export class ModuleSettings {
   /**
    * Check if Claude AI assistant is allowed to perform write operations
    */
-  isWriteOperationAllowed(operation: 'createActor' | 'modifyScene'): boolean {
-    // Check safety settings configured by GM
-    switch (operation) {
-      case 'createActor':
-        return this.getSetting('allowActorCreation');
-      case 'modifyScene':
-        return this.getSetting('allowSceneModification');
-      default:
-        return false;
-    }
+  isWriteOperationAllowed(_operation?: string): boolean {
+    // Simplified - single permission covers all write operations
+    return this.getSetting('allowWriteOperations');
   }
 
   migrateSettings(fromVersion: string, toVersion: string): void {
@@ -402,14 +376,15 @@ export class ModuleSettings {
   async resetToDefaults(): Promise<void> {
     const settingKeys = [
       // Basic Settings
-      'enabled', 'serverHost', 'serverPort', 'namespace',
+      'enabled', 'serverHost', 'serverPort',
       // Permissions
-      'allowCharacterAccess', 'allowCompendiumAccess', 'allowSceneAccess',
-      'allowActorCreation', 'allowSceneModification', 
+      'allowWriteOperations',
       // Safety Controls
-      'maxActorsPerRequest', 'requireConfirmationForBulk', 'enableWriteAuditLog',
+      'maxActorsPerRequest', 'enableWriteAuditLog',
+      // Enhanced Creature Index
+      'enableEnhancedCreatureIndex', 'autoRebuildIndex',
       // Connection Behavior
-      'connectionMode', 'enableNotifications', 'autoReconnectEnabled', 'heartbeatInterval'
+      'enableNotifications', 'autoReconnectEnabled', 'heartbeatInterval'
     ];
 
     for (const key of settingKeys) {

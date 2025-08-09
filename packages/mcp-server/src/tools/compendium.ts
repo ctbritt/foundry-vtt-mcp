@@ -320,30 +320,59 @@ export class CompendiumTools {
   async handleListCreaturesByCriteria(args: any): Promise<any> {
     const schema = z.object({
       challengeRating: z.union([
-        // Handle range objects FIRST to avoid string transform conflicts
+        // Range object - handle both native objects and JSON strings
         z.object({
-          min: z.union([z.number(), z.string().transform(val => parseFloat(val))]).default(0),
-          max: z.union([z.number(), z.string().transform(val => parseFloat(val))]).default(30)
+          min: z.number().optional().default(0),
+          max: z.number().optional().default(30)
         }),
+        // JSON string that parses to range object
+        z.string().refine((val) => {
+          try {
+            const parsed = JSON.parse(val);
+            return typeof parsed === 'object' && parsed !== null && 
+                   (typeof parsed.min === 'number' || typeof parsed.max === 'number');
+          } catch {
+            return false;
+          }
+        }, {
+          message: 'Challenge rating range must be valid JSON object with min/max numbers'
+        }).transform((val) => {
+          const parsed = JSON.parse(val);
+          return {
+            min: parsed.min || 0,
+            max: parsed.max || 30
+          };
+        }),
+        // Single number
         z.number(),
-        z.string().transform((val) => {
-          const num = parseFloat(val);
-          if (isNaN(num)) throw new Error('Invalid number format');
-          return num;
-        })
+        // String that converts to number (defensive parsing)
+        z.string().refine((val) => !isNaN(parseFloat(val)), {
+          message: 'Challenge rating must be a valid number'
+        }).transform((val) => parseFloat(val))
       ]).optional(),
       creatureType: z.enum(['humanoid', 'dragon', 'beast', 'undead', 'fey', 'fiend', 'celestial', 'construct', 'elemental', 'giant', 'monstrosity', 'ooze', 'plant', 'aberration']).optional(),
       size: z.enum(['tiny', 'small', 'medium', 'large', 'huge', 'gargantuan']).optional(),
-      hasSpells: z.union([z.boolean(), z.string().transform(val => val.toLowerCase() === 'true')]).optional(),
-      hasLegendaryActions: z.union([z.boolean(), z.string().transform(val => val.toLowerCase() === 'true')]).optional(),
+      hasSpells: z.union([
+        z.boolean(), 
+        z.string().refine((val) => ['true', 'false'].includes(val.toLowerCase()), {
+          message: 'hasSpells must be true or false'
+        }).transform(val => val.toLowerCase() === 'true')
+      ]).optional(),
+      hasLegendaryActions: z.union([
+        z.boolean(), 
+        z.string().refine((val) => ['true', 'false'].includes(val.toLowerCase()), {
+          message: 'hasLegendaryActions must be true or false'
+        }).transform(val => val.toLowerCase() === 'true')
+      ]).optional(),
       limit: z.union([
         z.number().min(1).max(1000),
-        z.string().transform(val => {
+        z.string().refine((val) => {
           const num = parseInt(val, 10);
-          if (isNaN(num) || num < 1 || num > 1000) throw new Error('Limit must be between 1 and 1000');
-          return num;
-        })
-      ]).optional().default(500),
+          return !isNaN(num) && num >= 1 && num <= 1000;
+        }, {
+          message: 'Limit must be a number between 1 and 1000'
+        }).transform(val => parseInt(val, 10))
+      ]).optional().default(100), // Reduced default for better Claude Desktop exploration
     });
 
     let params;
@@ -364,14 +393,27 @@ export class CompendiumTools {
 
       this.logger.debug('Creature criteria search completed', {
         criteriaCount: Object.keys(params).length,
-        totalFound: results.length,
-        limit: params.limit
+        totalFound: results.response?.creatures?.length || 0,
+        limit: params.limit,
+        packsSearched: results.response?.searchSummary?.packsSearched || 0
       });
 
+      // Extract search summary for transparency
+      const searchSummary = results.response?.searchSummary || {
+        packsSearched: 0,
+        topPacks: [],
+        totalCreaturesFound: results.response?.creatures?.length || 0
+      };
+
       return {
-        creatures: results.map((creature: any) => this.formatCreatureListItem(creature)),
-        totalFound: results.length,
+        creatures: (results.response?.creatures || results).map((creature: any) => this.formatCreatureListItem(creature)),
+        totalFound: results.response?.creatures?.length || results.length,
         criteria: params,
+        searchSummary: {
+          ...searchSummary,
+          searchStrategy: 'Prioritized pack search - core D&D content first, then modules, then campaign-specific',
+          note: 'Packs searched in priority order to find most relevant creatures first'
+        },
         optimizationNote: 'Use creature names to identify suitable options, then call get-compendium-item for final details only'
       };
 
@@ -549,23 +591,32 @@ export class CompendiumTools {
   private formatCreatureListItem(creature: any): any {
     const system = creature.system || {};
     
+    // Handle both enhanced creature index data (direct properties) and raw Foundry data (system paths)
+    const challengeRating = creature.challengeRating ?? system.details?.cr ?? system.cr ?? 0;
+    const creatureType = creature.creatureType ?? system.details?.type?.value ?? system.type?.value ?? 'unknown';
+    const size = creature.size ?? system.traits?.size ?? system.size ?? 'medium';
+    
+    // Use enhanced data for feature flags if available
+    const hasSpells = creature.hasSpells ?? !!(system.spells || system.attributes?.spellcasting || 
+                     (system.details?.spellLevel && system.details.spellLevel > 0));
+    const hasLegendary = creature.hasLegendaryActions ?? !!(system.resources?.legact || system.legendary || 
+                        (system.resources?.legres && system.resources.legres.value > 0));
+    
     // Ultra-minimal format for efficient discovery
     return {
       name: creature.name,
       id: creature.id,
       pack: { id: creature.pack, label: creature.packLabel },
-      challengeRating: system.details?.cr || system.cr || 0,
-      creatureType: system.details?.type?.value || system.type?.value || 'unknown',
-      size: system.traits?.size || system.size || 'medium',
+      challengeRating: challengeRating,
+      creatureType: creatureType,
+      size: size,
       // Key feature flags for quick filtering
       flags: {
-        spellcaster: !!(system.spells || system.attributes?.spellcasting || 
-                       (system.details?.spellLevel && system.details.spellLevel > 0)),
-        legendary: !!(system.resources?.legact || system.legendary || 
-                      (system.resources?.legres && system.resources.legres.value > 0)),
-        undead: (system.details?.type?.value || '').toLowerCase() === 'undead',
-        dragon: (system.details?.type?.value || '').toLowerCase() === 'dragon',
-        fiend: (system.details?.type?.value || '').toLowerCase() === 'fiend'
+        spellcaster: hasSpells,
+        legendary: hasLegendary,
+        undead: creatureType.toLowerCase() === 'undead',
+        dragon: creatureType.toLowerCase() === 'dragon',
+        fiend: creatureType.toLowerCase() === 'fiend'
       }
     };
   }

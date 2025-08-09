@@ -189,7 +189,12 @@ export class QueryHandlers {
 
       console.log(`[${MODULE_ID}] Listing creatures by criteria:`, data);
 
-      return await this.dataAccess.listCreaturesByCriteria(data);
+      const result = await this.dataAccess.listCreaturesByCriteria(data);
+      
+      // Handle the new format with search summary
+      return {
+        response: result
+      };
     } catch (error) {
       throw new Error(`Failed to list creatures by criteria: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
