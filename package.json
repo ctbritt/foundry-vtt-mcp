@@ -10,6 +10,10 @@
   "scripts": {
     "dev": "npm run dev --workspace=packages/mcp-server",
     "build": "npm run build --workspaces --if-present",
+    "build:foundry": "npm run build --workspace=packages/foundry-module",
+    "build:server": "npm run build --workspace=packages/mcp-server",
+    "build:app": "npm run build --workspace=packages/mcp-server-app",
+    "build:installers": "npm run build:foundry && npm run build:server && npm run build:app && npm run pack --workspace=packages/mcp-server-app",
     "test": "npm run test --workspaces --if-present",
     "lint": "eslint . --ext .ts,.js",
     "lint:fix": "eslint . --ext .ts,.js --fix",

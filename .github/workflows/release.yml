@@ -1,0 +1,416 @@
+name: Release Distribution
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.4.5)'
+        required: true
+        type: string
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # Build and package Foundry module
+  foundry-module:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Extract version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Update module version
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          jq --arg version "$VERSION" '.version = $version' packages/foundry-module/module.json > temp.json
+          mv temp.json packages/foundry-module/module.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Foundry module
+        run: |
+          cd packages/foundry-module
+          npm run build
+
+      - name: Create module package
+        run: |
+          cd packages/foundry-module
+          
+          # Create temporary directory for packaging
+          mkdir -p ../../dist/foundry-module
+          
+          # Copy required files for Foundry module
+          cp module.json ../../dist/foundry-module/
+          cp -r dist ../../dist/foundry-module/
+          cp -r styles ../../dist/foundry-module/
+          cp -r lang ../../dist/foundry-module/
+          
+          # Create ZIP file for Foundry distribution
+          cd ../../dist
+          zip -r foundry-mcp-bridge.zip foundry-module/
+          
+          # Also copy module.json to root for direct download
+          cp foundry-module/module.json .
+
+      - name: Upload Foundry module artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: foundry-module
+          path: |
+            dist/foundry-mcp-bridge.zip
+            dist/module.json
+          retention-days: 7
+
+  # Build MCP Server executables
+  mcp-server:
+    runs-on: ${{ matrix.os }}
+    needs: foundry-module
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win32
+            arch: x64
+            ext: .exe
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            ext: ''
+          - os: macos-latest
+            platform: darwin
+            arch: x64
+            ext: ''
+          - os: macos-latest
+            platform: darwin
+            arch: arm64
+            ext: ''
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build MCP Server
+        run: |
+          cd packages/mcp-server
+          npm run build
+
+      - name: Install pkg for executable creation
+        run: npm install -g pkg
+
+      - name: Create executable
+        run: |
+          cd packages/mcp-server
+          
+          # Update package.json version
+          VERSION="${{ needs.foundry-module.outputs.version }}"
+          jq --arg version "$VERSION" '.version = $version' package.json > temp.json
+          mv temp.json package.json
+          
+          # Create executable with pkg
+          if [[ "${{ matrix.platform }}" == "darwin" && "${{ matrix.arch }}" == "arm64" ]]; then
+            pkg dist/index.js --target node20-macos-arm64 --output foundry-mcp-server-macos-arm64
+          elif [[ "${{ matrix.platform }}" == "darwin" && "${{ matrix.arch }}" == "x64" ]]; then
+            pkg dist/index.js --target node20-macos-x64 --output foundry-mcp-server-macos-x64
+          elif [[ "${{ matrix.platform }}" == "linux" ]]; then
+            pkg dist/index.js --target node20-linux-x64 --output foundry-mcp-server-linux
+          else
+            pkg dist/index.js --target node20-win-x64 --output foundry-mcp-server-windows.exe
+          fi
+
+      - name: Upload MCP Server executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-server-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            packages/mcp-server/foundry-mcp-server*
+          retention-days: 7
+
+  # Create professional installers
+  create-installers:
+    runs-on: ${{ matrix.os }}
+    needs: [foundry-module, mcp-server]
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win32
+          - os: ubuntu-latest
+            platform: linux
+          - os: macos-latest
+            platform: darwin
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Download MCP Server artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: mcp-server-*
+          path: installers/
+
+      - name: Install Electron Builder
+        run: npm install -g electron-builder
+
+      - name: Create installer package structure
+        run: |
+          mkdir -p installers/app
+          VERSION="${{ needs.foundry-module.outputs.version }}"
+          
+          # Create package.json for installer
+          cat > installers/app/package.json << EOF
+          {
+            "name": "foundry-mcp-server",
+            "productName": "Foundry MCP Server",
+            "version": "$VERSION",
+            "description": "MCP server for Foundry VTT AI model integration",
+            "main": "foundry-mcp-server${{ matrix.platform == 'win32' && '.exe' || '' }}",
+            "author": {
+              "name": "Adam Dooley",
+              "email": "adambriandooley@gmail.com"
+            },
+            "homepage": "https://github.com/adambdooley/foundry-vtt-mcp-integration",
+            "repository": "https://github.com/adambdooley/foundry-vtt-mcp-integration",
+            "license": "MIT",
+            "build": {
+              "appId": "com.foundry-mcp.server",
+              "productName": "Foundry MCP Server",
+              "directories": {
+                "output": "../dist"
+              },
+              "files": [
+                "foundry-mcp-server*",
+                "package.json"
+              ],
+              "win": {
+                "target": [
+                  {
+                    "target": "nsis",
+                    "arch": ["x64"]
+                  }
+                ],
+                "icon": "icon.ico"
+              },
+              "mac": {
+                "target": [
+                  {
+                    "target": "dmg",
+                    "arch": ["x64", "arm64"]
+                  }
+                ],
+                "icon": "icon.icns"
+              },
+              "linux": {
+                "target": [
+                  {
+                    "target": "AppImage",
+                    "arch": ["x64"]
+                  },
+                  {
+                    "target": "deb",
+                    "arch": ["x64"]
+                  }
+                ],
+                "icon": "icon.png"
+              },
+              "nsis": {
+                "oneClick": false,
+                "allowToChangeInstallationDirectory": true,
+                "createDesktopShortcut": false,
+                "createStartMenuShortcut": true
+              }
+            }
+          }
+          EOF
+
+      - name: Copy executable to installer directory
+        run: |
+          if [[ "${{ matrix.platform }}" == "win32" ]]; then
+            cp installers/mcp-server-win32-x64/foundry-mcp-server-windows.exe installers/app/
+            mv installers/app/foundry-mcp-server-windows.exe installers/app/foundry-mcp-server.exe
+          elif [[ "${{ matrix.platform }}" == "linux" ]]; then
+            cp installers/mcp-server-linux-x64/foundry-mcp-server-linux installers/app/
+            mv installers/app/foundry-mcp-server-linux installers/app/foundry-mcp-server
+          else
+            # macOS - we'll handle both architectures
+            cp installers/mcp-server-darwin-x64/foundry-mcp-server-macos-x64 installers/app/
+            cp installers/mcp-server-darwin-arm64/foundry-mcp-server-macos-arm64 installers/app/
+            # Create universal binary if both architectures exist
+            if [[ -f "installers/app/foundry-mcp-server-macos-x64" && -f "installers/app/foundry-mcp-server-macos-arm64" ]]; then
+              lipo -create -output installers/app/foundry-mcp-server installers/app/foundry-mcp-server-macos-x64 installers/app/foundry-mcp-server-macos-arm64
+            else
+              mv installers/app/foundry-mcp-server-macos-x64 installers/app/foundry-mcp-server 2>/dev/null || mv installers/app/foundry-mcp-server-macos-arm64 installers/app/foundry-mcp-server
+            fi
+          fi
+
+      - name: Make executable
+        if: runner.os != 'Windows'
+        run: chmod +x installers/app/foundry-mcp-server
+
+      - name: Build installer
+        run: |
+          cd installers/app
+          npx electron-builder --publish=never
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.platform }}
+          path: |
+            installers/dist/*
+          retention-days: 7
+
+  # Create GitHub Release
+  create-release:
+    runs-on: ubuntu-latest
+    needs: [foundry-module, mcp-server, create-installers]
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets/
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          body: |
+            ## Foundry VTT MCP Integration ${{ github.ref_name }}
+            
+            ### Installation Instructions
+            
+            **Foundry Module:**
+            1. Open Foundry VTT
+            2. Go to Add-on Modules
+            3. Click "Install Module"
+            4. Paste: `https://github.com/adambdooley/foundry-vtt-mcp-integration/releases/latest/download/module.json`
+            
+            **MCP Server:**
+            - **Windows**: Download and run `Foundry-MCP-Server-Setup.exe`
+            - **macOS**: Download and install `Foundry-MCP-Server.dmg`  
+            - **Linux**: Download `Foundry-MCP-Server.AppImage` or `foundry-mcp-server.deb`
+            
+            ### Features
+            - AI-powered actor creation and management
+            - Intelligent compendium search and filtering
+            - Campaign analysis and quest management
+            - Interactive dice roll coordination
+            - Enhanced creature indexing for instant searches
+            - Comprehensive GM-only security system
+            
+            ### Compatibility
+            - Foundry VTT v11+ (verified through v13)
+            - Claude Desktop, local LLMs, and future AI models
+            - Windows, macOS, and Linux support
+
+      - name: Upload Foundry Module
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: release-assets/foundry-module/foundry-mcp-bridge.zip
+          asset_name: foundry-mcp-bridge.zip
+          asset_content_type: application/zip
+
+      - name: Upload Module Manifest
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: release-assets/foundry-module/module.json
+          asset_name: module.json
+          asset_content_type: application/json
+
+      - name: Upload Windows Installer
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: release-assets/installer-win32/Foundry MCP Server Setup.exe
+          asset_name: Foundry-MCP-Server-Setup.exe
+          asset_content_type: application/x-msdownload
+
+      - name: Upload macOS Installer
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: release-assets/installer-darwin/Foundry MCP Server.dmg
+          asset_name: Foundry-MCP-Server.dmg
+          asset_content_type: application/x-apple-diskimage
+
+      - name: Upload Linux AppImage
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: release-assets/installer-linux/Foundry MCP Server.AppImage
+          asset_name: Foundry-MCP-Server.AppImage
+          asset_content_type: application/x-executable
+
+      - name: Upload Linux DEB
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: release-assets/installer-linux/foundry-mcp-server.deb
+          asset_name: foundry-mcp-server.deb
+          asset_content_type: application/x-debian-package

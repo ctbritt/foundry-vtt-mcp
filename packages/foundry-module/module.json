@@ -1,7 +1,7 @@
 {
   "id": "foundry-mcp-bridge",
-  "title": "Foundry MCP Bridge", 
-  "description": "Authenticated bridge module that connects Foundry VTT data to external MCP server for AI model integration. Supports AI-powered actor creation, compendium search, and write operations with comprehensive permission system.",
+  "title": "AI Model Integration Bridge",
+  "description": "Connect Foundry VTT to AI models through MCP protocol. Enable AI-powered actor creation, intelligent compendium search, campaign analysis, and interactive dice roll coordination. Supports Claude, local LLMs, and future AI models with comprehensive GM-only security.",
   "version": "0.4.5",
   "compatibility": {
     "minimum": "11",
@@ -11,9 +11,15 @@
   "authors": [
     {
       "name": "Adam Dooley",
-      "email": "adam@adambdooley.com"
+      "email": "adambriandooley@gmail.com",
+      "url": "https://github.com/adambdooley"
     }
   ],
+  "url": "https://github.com/adambdooley/foundry-vtt-mcp-integration",
+  "bugs": "https://github.com/adambdooley/foundry-vtt-mcp-integration/issues",
+  "changelog": "https://github.com/adambdooley/foundry-vtt-mcp-integration/releases",
+  "readme": "https://github.com/adambdooley/foundry-vtt-mcp-integration/blob/master/README.md",
+  "license": "https://github.com/adambdooley/foundry-vtt-mcp-integration/blob/master/LICENSE",
   "esmodules": [
     "dist/main.js"
   ],
@@ -34,6 +40,16 @@
   "protected": false,
   "coreTranslation": false,
   "library": false,
+  "keywords": [
+    "ai",
+    "mcp",
+    "claude",
+    "automation",
+    "actor-creation",
+    "compendium",
+    "search",
+    "dice-rolls"
+  ],
   "flags": {
     "hotReload": {
       "extensions": ["css", "hbs", "json"],
