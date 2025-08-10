@@ -16,7 +16,7 @@ export class ModuleSettings {
     (game.settings as any).registerMenu(this.moduleId, 'enhancedIndexMenu', {
       name: 'Enhanced Creature Index',
       label: 'Configure Enhanced Index',
-      hint: 'The Enhanced Creature Index pre-computes creature statistics for instant filtering by Challenge Rating, creature type, and abilities. This enables Claude to quickly find creatures matching specific criteria without loading every compendium entry.',
+      hint: 'The Enhanced Creature Index pre-computes creature statistics for instant filtering by Challenge Rating, creature type, and abilities. This enables AI models to quickly find creatures matching specific criteria without loading every compendium entry.',
       icon: 'fas fa-search-plus',
       type: class extends FormApplication {
         static get defaultOptions() {
@@ -97,7 +97,7 @@ export class ModuleSettings {
     
     game.settings.register(this.moduleId, 'allowWriteOperations', {
       name: 'Allow Write Operations',
-      hint: 'Let Claude create actors, NPCs, and modify world content. Reading is always allowed.',
+      hint: 'Let AI model create actors, NPCs, and modify world content. Reading is always allowed.',
       scope: 'world',
       config: true,
       type: Boolean,
@@ -105,12 +105,12 @@ export class ModuleSettings {
     });
 
     // ============================================================================
-    // SECTION 3: SAFETY CONTROLS - Limits on Claude's Actions
+    // SECTION 3: SAFETY CONTROLS - Limits on AI model's Actions
     // ============================================================================
 
     game.settings.register(this.moduleId, 'maxActorsPerRequest', {
       name: 'Max Actors Per Request',
-      hint: 'Maximum number of actors Claude can create in a single request',
+      hint: 'Maximum number of actors AI model can create in a single request',
       scope: 'world',
       config: true,
       type: Number,
@@ -123,8 +123,8 @@ export class ModuleSettings {
     });
 
     game.settings.register(this.moduleId, 'enableWriteAuditLog', {
-      name: 'Track Claude\'s Changes',
-      hint: 'Log all changes Claude makes for transparency and debugging',
+      name: 'Track AI Model\'s Changes',
+      hint: 'Log all changes AI model makes for transparency and debugging',
       scope: 'world',
       config: true,
       type: Boolean,
@@ -356,7 +356,7 @@ export class ModuleSettings {
   }
 
   /**
-   * Check if Claude AI assistant is allowed to perform write operations
+   * Check if AI model is allowed to perform write operations
    */
   isWriteOperationAllowed(_operation?: string): boolean {
     // Simplified - single permission covers all write operations
