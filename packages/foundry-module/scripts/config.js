@@ -13,7 +13,7 @@ export class ModuleConfig {
     // Enable/disable the bridge
     game.settings.register(this.moduleId, 'enabled', {
       name: 'Enable MCP Bridge',
-      hint: 'Enable or disable the MCP bridge connection to Claude Desktop',
+      hint: 'Enable or disable the MCP bridge connection to AI model',
       scope: 'world',
       config: true,
       type: Boolean,

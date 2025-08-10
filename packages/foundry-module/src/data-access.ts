@@ -265,8 +265,8 @@ class PersistentCreatureIndex {
       // Check if file exists using Foundry's FilePicker
       let fileExists = false;
       try {
-        const browseResult = await FilePicker.browse('data', `worlds/${game.world.id}`);
-        fileExists = browseResult.files.some(f => f.endsWith(this.INDEX_FILENAME));
+        const browseResult = await (foundry as any).applications.apps.FilePicker.implementation.browse('data', `worlds/${game.world.id}`);
+        fileExists = browseResult.files.some((f: any) => f.endsWith(this.INDEX_FILENAME));
       } catch (error) {
         // Directory doesn't exist or other error, return null
         return null;
@@ -331,7 +331,7 @@ class PersistentCreatureIndex {
       const file = new File([jsonContent], this.INDEX_FILENAME, { type: 'application/json' });
       
       // Upload the file to the world directory
-      const uploadResponse = await FilePicker.upload('data', `worlds/${game.world.id}`, file);
+      const uploadResponse = await (foundry as any).applications.apps.FilePicker.implementation.upload('data', `worlds/${game.world.id}`, file);
 
       if (uploadResponse) {
         console.log(`[${this.moduleId}] Enhanced creature index saved to file (${index.creatures.length} creatures)`);
@@ -447,8 +447,8 @@ class PersistentCreatureIndex {
       
       try {
         // Check if file exists first by trying to browse to the world directory
-        const browseResult = await FilePicker.browse('data', `worlds/${game.world.id}`);
-        const fileExists = browseResult.files.some(f => f.endsWith(this.INDEX_FILENAME));
+        const browseResult = await (foundry as any).applications.apps.FilePicker.implementation.browse('data', `worlds/${game.world.id}`);
+        const fileExists = browseResult.files.some((f: any) => f.endsWith(this.INDEX_FILENAME));
         
         if (fileExists) {
           // File exists, delete it using fetch with DELETE method
@@ -857,22 +857,11 @@ export class FoundryDataAccess {
     }
   }
 
-  /**
-   * Check if user has permission for a specific data access type
-   */
-  private checkPermission(permissionKey: string): boolean {
-    const allowed = game.settings.get(this.moduleId, permissionKey);
-    if (!allowed) {
-      throw new Error(`${ERROR_MESSAGES.ACCESS_DENIED}: ${permissionKey} is disabled`);
-    }
-    return true;
-  }
 
   /**
    * Get character/actor information by name or ID
    */
   async getCharacterInfo(identifier: string): Promise<CharacterInfo> {
-    this.checkPermission('allowCharacterAccess');
 
     let actor: Actor | undefined;
 
@@ -934,7 +923,6 @@ export class FoundryDataAccess {
     hasLegendaryActions?: boolean;
     spellcaster?: boolean;
   }): Promise<CompendiumSearchResult[]> {
-    this.checkPermission('allowCompendiumAccess');
 
     // Add defensive checks for query parameter
     if (!query || typeof query !== 'string' || query.trim().length < 2) {
@@ -1316,7 +1304,6 @@ export class FoundryDataAccess {
     hasLegendaryActions?: boolean;
     limit?: number;
   }): Promise<{creatures: any[], searchSummary: any}> {
-    this.checkPermission('allowCompendiumAccess');
 
     const limit = criteria.limit || 500;
 
@@ -1725,7 +1712,6 @@ export class FoundryDataAccess {
    * List all actors with basic information
    */
   async listActors(): Promise<Array<{ id: string; name: string; type: string; img?: string }>> {
-    this.checkPermission('allowCharacterAccess');
 
     return game.actors.map(actor => ({
       id: actor.id || '',
@@ -1739,7 +1725,6 @@ export class FoundryDataAccess {
    * Get active scene information
    */
   async getActiveScene(): Promise<SceneInfo> {
-    this.checkPermission('allowSceneAccess');
 
     const scene = (game.scenes as any).current;
     if (!scene) {
@@ -1807,7 +1792,6 @@ export class FoundryDataAccess {
    * Get available compendium packs
    */
   async getAvailablePacks() {
-    this.checkPermission('allowCompendiumAccess');
 
     return Array.from(game.packs.values()).map(pack => ({
       id: pack.metadata.id,
@@ -2205,7 +2189,6 @@ export class FoundryDataAccess {
    * Get full compendium document with all embedded data
    */
   async getCompendiumDocumentFull(packId: string, documentId: string): Promise<CompendiumEntryFull> {
-    this.checkPermission('allowCompendiumAccess');
 
     const pack = game.packs.get(packId);
     if (!pack) {

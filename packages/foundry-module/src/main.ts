@@ -14,6 +14,7 @@ class FoundryMCPBridge {
   private isInitialized = false;
   private heartbeatInterval: number | null = null;
   private lastActivity: Date = new Date();
+  private isConnecting = false;
 
   constructor() {
     this.settings = new ModuleSettings();
@@ -107,8 +108,8 @@ class FoundryMCPBridge {
       // Check if index file exists
       const indexFilename = 'enhanced-creature-index.json';
       try {
-        const browseResult = await FilePicker.browse('data', `worlds/${game.world.id}`);
-        const indexExists = browseResult.files.some(f => f.endsWith(indexFilename));
+        const browseResult = await (foundry as any).applications.apps.FilePicker.implementation.browse('data', `worlds/${game.world.id}`);
+        const indexExists = browseResult.files.some((f: any) => f.endsWith(indexFilename));
         
         if (!indexExists) {
           console.log(`[${MODULE_ID}] Enhanced creature index not found, building automatically for better UX...`);
@@ -144,10 +145,12 @@ class FoundryMCPBridge {
       return;
     }
 
-    if (this.socketBridge?.isConnected()) {
-      console.log(`[${MODULE_ID}] Bridge already running`);
+    if (this.socketBridge?.isConnected() || this.isConnecting) {
+      console.log(`[${MODULE_ID}] Bridge already running or connecting`);
       return;
     }
+
+    this.isConnecting = true;
 
     try {
       console.log(`[${MODULE_ID}] Starting MCP bridge...`);
@@ -178,7 +181,7 @@ class FoundryMCPBridge {
       
       // Show connection notification based on user preference
       if (this.settings.getSetting('enableNotifications')) {
-        ui.notifications.info('🔗 MCP Bridge connected successfully (GM only)');
+        ui.notifications.info('🔗 MCP Bridge connected successfully');
       }
       console.log(`[${MODULE_ID}] GM connection established - Bridge active for user: ${game.user?.name}`);
 
@@ -188,6 +191,8 @@ class FoundryMCPBridge {
       
       await this.settings.setSetting('lastConnectionState', 'error');
       throw error;
+    } finally {
+      this.isConnecting = false;
     }
   }
 
@@ -321,7 +326,7 @@ class FoundryMCPBridge {
           // Disable further attempts until manual intervention
           await this.settings.setSetting('autoReconnectEnabled', false);
           if (this.settings.getSetting('enableNotifications')) {
-            ui.notifications.warn('⚠️ Lost connection to Claude Desktop - Auto-reconnect disabled');
+            ui.notifications.warn('⚠️ Lost connection to AI model - Auto-reconnect disabled');
           }
         }
       }

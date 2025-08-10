@@ -1,138 +1,143 @@
-# Foundry VTT MCP Integration - Session Report
+# Foundry VTT MCP Integration
 
-**Date:** August 8, 2025  
-**Session Focus:** Creature Discovery System Architecture & Debugging  
-**Status:** Architecture Decision Made - Ready for Implementation
+A Model Context Protocol (MCP) server that bridges Foundry VTT game data with Claude Desktop for AI-powered interactions.
 
-## Today's Discovery & Problem Analysis
+## What This Does
 
-### The Core Issue Uncovered
-Through extensive debugging, we discovered that Foundry VTT's compendium indexes contain **only basic metadata**:
+Transform your Foundry VTT game management with AI-powered conversations:
 
-```javascript
-// What's Available in Foundry Compendium Index:
+- **Ask Claude about character stats and abilities**
+- **Search through compendium data using natural language** 
+- **Create actors, NPCs, and quests from simple prompts**
+- **Get scene information and world details**
+- **Interactive dice roll coordination**
+- **Enhanced creature discovery with instant filtering**
+
+## Quick Start
+
+### Prerequisites
+
+- **Foundry VTT v11+** (tested on v13)
+- **Node.js 18+** and npm 9+
+- **Claude Desktop** with MCP support
+- **Active Claude subscription**
+
+### Installation Steps
+
+#### 1. Install the Foundry Module
+
+**Option A: Manual Installation (Current)**
+1. Download the latest release from GitHub
+2. Extract to your Foundry `Data/modules/` directory
+3. Enable "Foundry MCP Bridge" in Module Management
+
+**Option B: Foundry Package Browser (Coming Soon)**
+- Search for "MCP Bridge" in the Foundry package browser
+
+#### 2. Install and Run MCP Server
+
+```bash
+# Clone repository
+git clone https://github.com/adambdooley/foundry-vtt-mcp-integration.git
+cd foundry-vtt-mcp-integration
+
+# Install dependencies and build
+npm install
+npm run build
+
+# Start MCP server
+npm run dev
+```
+
+#### 3. Configure Claude Desktop
+
+Add this to your Claude Desktop MCP configuration:
+
+```json
 {
-  id: "ddbWarlor2560956",
-  name: "Warlord",
-  type: "npc", 
-  pack: "world.ddb-monsters",
-  description: "Brief description",
-  hasImage: true,
-  img: "path/to/image.webp"
-}
-
-// What's MISSING (but needed for filtering):
-// ❌ challengeRating
-// ❌ creatureType (humanoid, dragon, etc.)  
-// ❌ hitPoints, armorClass
-// ❌ size, alignment
-// ❌ hasSpells, hasLegendaryActions
-// ❌ abilities (STR, DEX, etc.)
-```
-
-### Failed Approaches Attempted
-
-**❌ Real-time Document Loading**
-- Loading full documents one-by-one during search
-- **Result:** Query timeouts (>2 minutes)
-- **Issue:** Too slow for user experience
-
-**❌ Batch Document Loading**  
-- Loading entire compendium packs at once
-- **Result:** Still caused timeouts
-- **Issue:** Still too much data transfer during search
-
-**❌ Enhanced Cache System**
-- Pre-computed cache built on first search
-- **Result:** First search always times out
-- **Issue:** Terrible user experience - users expect instant results
-
-**❌ Name Pattern Matching**
-- Intelligent patterns like CR 12 → "warlord", "champion" 
-- **Result:** Won't work reliably without actual CR data
-- **Issue:** False positives/negatives, not scalable
-
-## Tomorrow's Solution: Persistent Enhanced Index
-
-### Architecture Decision
-We will implement a **Persistent Enhanced Creature Index** system that:
-
-1. **Pre-extracts** all missing data during one-time setup
-2. **Stores persistently** in Foundry world database  
-3. **Updates incrementally** when compendiums change
-4. **Provides instant search** against cached data
-
-### Key Benefits
-- ✅ **No timeouts** - Search against pre-built data
-- ✅ **Rich filtering** - CR, creature type, abilities available  
-- ✅ **Persistent** - Survives Foundry restarts
-- ✅ **Smart updates** - Only rebuilds changed packs
-- ✅ **Great UX** - Fast results after one-time setup
-
-### Implementation Plan
-
-**Storage Strategy:**
-```javascript
-const enhancedIndex = {
-  metadata: {
-    version: "1.0.0",
-    timestamp: Date.now(),
-    packFingerprints: { /* change detection */ }
-  },
-  creatures: [
-    {
-      // Basic + Enhanced data combined
-      id, name, pack, type,
-      challengeRating: 12,
-      creatureType: "humanoid",
-      hitPoints: 229,
-      // ... all searchable fields
+  "mcpServers": {
+    "foundry-mcp": {
+      "command": "node",
+      "args": ["path/to/foundry-mcp-integration/packages/mcp-server/dist/index.js"],
+      "env": {
+        "FOUNDRY_HOST": "localhost",
+        "FOUNDRY_PORT": "31415"
+      }
     }
-  ]
-};
+  }
+}
 ```
 
-**Change Detection:**
-- Pack fingerprints (lastModified, documentCount, checksum)
-- Foundry hooks for real-time updates
-- Manual rebuild button as failsafe
+#### 4. Connect and Use
 
-**User Experience:**
-- First time: "Building enhanced creature index..." (30-60 seconds)
-- Subsequent searches: Instant results
-- Background updates when packs change
+1. Start Foundry VTT and load your world
+2. Start the MCP server (`npm run dev`)
+3. Open Claude Desktop
+4. Start chatting with Claude about your game data!
 
-## Current Status
+## Example Usage
 
-### Working Features ✅
-- **MCP Bridge Connection**: 17 tools available, GM-only access
-- **Basic Search**: Text-based search works perfectly
-- **Core Functionality**: Character info, compendium access, quest creation
+Once configured, ask Claude Desktop:
 
-### Known Issues 🚨
-- **Creature Filtering**: CR and creature type filters don't work (need enhanced index)
-- **Performance**: Complex searches timeout without pre-built index
+- *"Show me my character Aragorn's stats"*
+- *"Find all CR 12 humanoid creatures for an encounter"*
+- *"Create a quest about an evil tomatomancer named Erin Delly"*
+- *"Roll a stealth check for my rogue"*
+- *"What tokens are in the current scene?"*
 
-### Files Modified Today
-- `packages/foundry-module/src/data-access.ts` - Simplified search functions
-- Removed complex caching system that caused timeouts
-- Prepared for persistent index implementation
+## Features
 
-## Next Session Goals
+### ✅ Version 0.4.4 - Current
 
-1. **Implement PersistentCreatureIndex class**
-2. **Add one-time index building with progress notifications** 
-3. **Implement incremental updates and change detection**
-4. **Add manual refresh in settings**
-5. **Test full creature discovery workflow**
+- **17 MCP Tools** for comprehensive game management
+- **Enhanced Creature Index** with instant filtering by CR, type, abilities
+- **Professional Settings Interface** with streamlined configuration
+- **Interactive Dice Roll System** with player targeting
+- **Quest and Journal Creation** from natural language prompts
+- **Actor Creation** with intelligent compendium matching
+- **GM-Only Security** with granular permissions
+- **Production-Ready** architecture with error handling
 
-## Development Context
+### 🔄 Roadmap
 
-**Project:** Foundry VTT MCP Integration  
-**Goal:** AI-powered creature discovery and encounter building  
-**Architecture:** Claude Desktop ↔ MCP Server ↔ Foundry Module ↔ Foundry VTT  
-**Status:** Phase 3 Complete, Phase 4 Architecture Planned
+- **Easy Installation Package** for Foundry Package Browser
+- **Automated Setup Wizard** for first-time users
+- **Additional Game Systems** beyond D&D 5e
+- **Enhanced Integrations** with popular Foundry modules
+
+## Architecture
+
+```
+Claude Desktop ↔ MCP Protocol ↔ MCP Server ↔ WebSocket ↔ Foundry Module ↔ Foundry VTT
+```
+
+- **Foundry Module**: Provides secure data access within Foundry VTT
+- **MCP Server**: External Node.js server handling Claude Desktop communication
+- **No API Keys Required**: Uses your existing Claude Desktop subscription
+
+## Security & Permissions
+
+- **GM-Only Access**: All functionality restricted to Game Master users
+- **Configurable Permissions**: Control what data Claude can access and modify
+- **Session-Based Auth**: Uses Foundry's built-in authentication system
+- **Audit Logging**: Optional tracking of all AI-generated changes
+
+## Support & Development
+
+- **Issues**: Report bugs on [GitHub Issues](https://github.com/adambdooley/foundry-vtt-mcp-integration/issues)
+- **Development**: Built with TypeScript, tested on Foundry VTT v13
+- **License**: MIT License
+
+## Tomorrow's Goals
+
+**Making this installable and user-friendly:**
+
+1. **Package for Foundry Browser** - Create proper distribution package
+2. **Simplify MCP Server Setup** - Reduce installation complexity  
+3. **Automated Configuration** - Setup wizard for first-time users
+4. **Documentation Cleanup** - User-friendly installation guides
+5. **Testing & Polish** - Ensure smooth installation experience
 
 ---
 
-**Great work today!** We identified the root cause and designed the correct architectural solution. Tomorrow's persistent index implementation will solve the timeout issues once and for all.
+**Ready to transform your TTRPG sessions with AI?** Get started with the installation steps above!

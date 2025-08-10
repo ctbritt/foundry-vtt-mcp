@@ -32,35 +32,35 @@ export class PermissionManager {
       name: 'Create Actor',
       level: PERMISSION_LEVELS.LOW_RISK,
       description: 'Create new actors from compendium entries',
-      settingKey: 'allowActorCreation',
+      settingKey: 'allowWriteOperations',
       requiresGM: false,
     },
     modifyScene: {
       name: 'Modify Scene',
       level: PERMISSION_LEVELS.MEDIUM_RISK,
       description: 'Add tokens to scenes or modify scene elements',
-      settingKey: 'allowSceneModification',
+      settingKey: 'allowWriteOperations',
       requiresGM: false,
     },
     bulkOperations: {
       name: 'Bulk Operations',
       level: PERMISSION_LEVELS.MEDIUM_RISK,
       description: 'Perform operations on multiple entities at once',
-      settingKey: 'requireConfirmationForBulk',
+      settingKey: 'allowWriteOperations',
       requiresGM: false,
     },
     deleteData: {
       name: 'Delete Data',
       level: PERMISSION_LEVELS.HIGH_RISK,
       description: 'Delete actors, scenes, or other world data',
-      settingKey: 'allowDataDeletion',
+      settingKey: 'allowWriteOperations',
       requiresGM: true,
     },
     modifyWorld: {
       name: 'Modify World',
       level: PERMISSION_LEVELS.HIGH_RISK,
       description: 'Modify world settings or structure',
-      settingKey: 'allowWorldModification',
+      settingKey: 'allowWriteOperations',
       requiresGM: true,
     },
   };
@@ -106,9 +106,8 @@ export class PermissionManager {
         };
       }
 
-      // Check if bulk operations require confirmation
-      const requiresBulkConfirmation = game.settings.get(this.moduleId, 'requireConfirmationForBulk') as boolean;
-      if (requiresBulkConfirmation && context.quantity > 1) {
+      // Bulk operations always require confirmation for quantities > 3 as a safety measure
+      if (context.quantity > 3) {
         requiresConfirmation = true;
         warnings.push(`This will create ${context.quantity} actors`);
       }

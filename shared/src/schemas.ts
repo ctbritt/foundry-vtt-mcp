@@ -119,9 +119,6 @@ export const FoundryMCPConfigSchema = z.object({
   mcpPort: z.number().min(1024).max(65535),
   connectionTimeout: z.number().min(5).max(60),
   debugLogging: z.boolean(),
-  allowCharacterAccess: z.boolean(),
-  allowCompendiumAccess: z.boolean(),
-  allowSceneAccess: z.boolean(),
 });
 
 export const MCPServerConfigSchema = z.object({

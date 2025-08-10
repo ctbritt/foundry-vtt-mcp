@@ -29,18 +29,6 @@
         "name": "Reconnection Delay (ms)",
         "hint": "Base delay between reconnection attempts (uses exponential backoff)"
       },
-      "allowCharacterAccess": {
-        "name": "Allow Character Access",
-        "hint": "Permit MCP server to access character/actor data and statistics"
-      },
-      "allowCompendiumAccess": {
-        "name": "Allow Compendium Access", 
-        "hint": "Permit MCP server to search and access compendium pack data"
-      },
-      "allowSceneAccess": {
-        "name": "Allow Scene Access",
-        "hint": "Permit MCP server to access current scene and token information"
-      },
       "debugLogging": {
         "name": "Debug Logging",
         "hint": "Enable detailed console logging for troubleshooting connection issues"

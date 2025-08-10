@@ -117,9 +117,6 @@ export interface FoundryMCPConfig {
   mcpPort: number;
   connectionTimeout: number;
   debugLogging: boolean;
-  allowCharacterAccess: boolean;
-  allowCompendiumAccess: boolean;
-  allowSceneAccess: boolean;
 }
 
 export interface MCPServerConfig {

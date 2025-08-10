@@ -61,7 +61,7 @@ export class ModuleSettings {
     // ============================================================================
     
     game.settings.register(this.moduleId, 'enabled', {
-      name: 'Enable Claude Desktop Bridge',
+      name: 'Enable MCP Bridge',
       hint: 'Master switch to enable/disable the MCP bridge connection',
       scope: 'world',
       config: true,
@@ -152,7 +152,7 @@ export class ModuleSettings {
 
     game.settings.register(this.moduleId, 'enableNotifications', {
       name: 'Show Connection Messages',
-      hint: 'Display notifications when connecting/disconnecting from Claude Desktop',
+      hint: 'Display notifications when connecting/disconnecting from AI model',
       scope: 'world',
       config: true,
       type: Boolean,
@@ -161,7 +161,7 @@ export class ModuleSettings {
 
     game.settings.register(this.moduleId, 'autoReconnectEnabled', {
       name: 'Auto-Reconnect on Disconnect',
-      hint: 'Automatically try to reconnect if the connection to Claude Desktop is lost',
+      hint: 'Automatically try to reconnect if the connection to AI model is lost',
       scope: 'world',
       config: true,
       type: Boolean,
@@ -170,7 +170,7 @@ export class ModuleSettings {
 
     game.settings.register(this.moduleId, 'heartbeatInterval', {
       name: 'Connection Check Frequency',
-      hint: 'How often to check if Claude Desktop is still connected (seconds)',
+      hint: 'How often to check if AI model is still connected (seconds)',
       scope: 'world',
       config: true,
       type: Number,
@@ -203,10 +203,10 @@ export class ModuleSettings {
   /**
    * Update connection status display in settings
    */
-  updateConnectionStatusDisplay(connected: boolean, toolCount: number): void {
+  updateConnectionStatusDisplay(connected: boolean, _toolCount: number): void {
     try {
       const statusText = connected 
-        ? `✅ Connected - ${toolCount} tools available` 
+        ? `✅ Connected` 
         : `❌ Disconnected - Use connection panel to connect`;
       
       // Update the hint for the enabled setting to show status
