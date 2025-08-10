@@ -2,7 +2,7 @@
   "id": "foundry-mcp-bridge",
   "title": "Foundry MCP Bridge", 
   "description": "Authenticated bridge module that connects Foundry VTT data to external MCP server for AI model integration. Supports AI-powered actor creation, compendium search, and write operations with comprehensive permission system.",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "compatibility": {
     "minimum": "11",
     "verified": "13",
@@ -10,8 +10,8 @@
   },
   "authors": [
     {
-      "name": "Your Name",
-      "email": "your.email@example.com"
+      "name": "Adam Dooley",
+      "email": "adam@adambdooley.com"
     }
   ],
   "esmodules": [
@@ -29,8 +29,8 @@
     }
   ],
   "socket": true,
-  "manifest": "https://github.com/yourusername/foundry-mcp-integration/releases/latest/download/module.json",
-  "download": "https://github.com/yourusername/foundry-mcp-integration/releases/latest/download/foundry-mcp-bridge.zip",
+  "manifest": "https://github.com/adambdooley/foundry-vtt-mcp-integration/releases/latest/download/module.json",
+  "download": "https://github.com/adambdooley/foundry-vtt-mcp-integration/releases/latest/download/foundry-mcp-bridge.zip",
   "protected": false,
   "coreTranslation": false,
   "library": false,
