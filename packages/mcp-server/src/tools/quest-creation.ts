@@ -280,6 +280,9 @@ export class QuestCreationTools {
       const request = requestSchema.parse(args);
       console.error(`[MCP-UPDATE-DEBUG] Request parsed successfully:`, request);
 
+      // Validate content is plain text (no Markdown)
+      this.validatePlainTextContent(request.newContent);
+
       // Get current journal content
       const currentJournal = await this.foundryClient.query('foundry-mcp-bridge.getJournalContent', {
         journalId: request.journalId
@@ -1051,5 +1054,81 @@ export class QuestCreationTools {
     }
     
     return objectives;
+  }
+
+  /**
+   * Validate that content is plain text without Markdown syntax
+   * Throws detailed error messages to guide Claude Desktop toward correct usage
+   */
+  private validatePlainTextContent(content: string): void {
+    const markdownPatterns = [
+      { 
+        pattern: /\*\*(.+?)\*\*/g, 
+        example: '**bold text**', 
+        fix: 'bold text (tool will format automatically)' 
+      },
+      { 
+        pattern: /\*(.+?)\*/g, 
+        example: '*italic text*', 
+        fix: 'italic text (tool will format automatically)' 
+      },
+      { 
+        pattern: /^#{1,6}\s+(.+)/gm, 
+        example: '# Header or ## Subheader', 
+        fix: 'Header (tool will create proper headings)' 
+      },
+      { 
+        pattern: /`(.+?)`/g, 
+        example: '`code text`', 
+        fix: 'code text (tool will format automatically)' 
+      },
+      { 
+        pattern: /\[(.+?)\]\((.+?)\)/g, 
+        example: '[link text](url)', 
+        fix: 'link text (tool will create proper links)' 
+      },
+      { 
+        pattern: /^[-*+]\s+(.+)/gm, 
+        example: '- list item or * list item', 
+        fix: 'list item (tool will create proper lists)' 
+      },
+      { 
+        pattern: /^\d+\.\s+(.+)/gm, 
+        example: '1. numbered item', 
+        fix: 'numbered item (tool will create proper numbered lists)' 
+      },
+      { 
+        pattern: />{1,}\s*(.+)/gm, 
+        example: '> blockquote', 
+        fix: 'blockquote text (tool will format as callout)' 
+      }
+    ];
+
+    const foundPatterns: string[] = [];
+
+    for (const { pattern, example, fix } of markdownPatterns) {
+      if (pattern.test(content)) {
+        foundPatterns.push(`Found "${example}" - use plain text: "${fix}"`);
+      }
+    }
+
+    if (foundPatterns.length > 0) {
+      throw new Error(
+        `Markdown syntax detected! This tool requires plain text only and will automatically convert it to proper Foundry VTT HTML.
+
+DETECTED ISSUES:
+${foundPatterns.map(issue => `• ${issue}`).join('\n')}
+
+EXAMPLE - Instead of:
+"## The Party Discovered
+**Important:** The *ancient tome* contains magical secrets"
+
+USE PLAIN TEXT:
+"The Party Discovered
+Important: The ancient tome contains magical secrets"
+
+The tool will automatically convert this to proper HTML with headings, emphasis, and formatting for Foundry VTT's ProseMirror editor.`
+      );
+    }
   }
 }
