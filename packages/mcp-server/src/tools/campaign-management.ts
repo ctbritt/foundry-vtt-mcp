@@ -445,9 +445,6 @@ export class CampaignManagementTools {
     
     html += `\n    <p>${part.description}</p>`;
     
-    // Add GM status update controls
-    html += this.generateGMControls(part, campaign.id, 'main');
-    
     // Add dependencies info if locked
     if (isLocked && part.dependencies.length > 0) {
       const depNames = part.dependencies.map(depId => {
@@ -462,14 +459,11 @@ export class CampaignManagementTools {
       html += `\n    <div class="sub-parts">`;
       part.subParts.forEach((subPart, subIndex) => {
         const subStatusIcon = this.getStatusIcon(subPart.status);
-        html += `\n      <div class="sub-part-item">`;
-        html += `\n        <p>${subStatusIcon} <strong>${partNumber}.${subIndex + 1}: ${subPart.title}</strong>`;
+        html += `\n      <p>${subStatusIcon} <strong>${partNumber}.${subIndex + 1}: ${subPart.title}</strong>`;
         if (subPart.journalId) {
           html += ` - <strong>@JournalEntry[${subPart.journalId}]{View Details}</strong>`;
         }
         html += `</p>`;
-        html += this.generateGMControls(subPart, campaign.id, 'sub', part.id);
-        html += `\n      </div>`;
       });
       html += `\n    </div>`;
     }
@@ -576,36 +570,4 @@ export class CampaignManagementTools {
     return null;
   }
 
-  /**
-   * Generate GM status update controls for campaign parts
-   * Creates clickable commands that GMs can use to update progress
-   */
-  private generateGMControls(part: CampaignPart | any, campaignId: string, type: 'main' | 'sub', parentId?: string): string {
-    const partId = part.id;
-    const currentStatus = part.status;
-    
-    // Skip GM controls if already completed or skipped
-    if (currentStatus === 'completed' || currentStatus === 'skipped') {
-      return '';
-    }
-
-    let controls = `\n    <div class="gmnote campaign-gm-controls">`;
-    controls += `\n      <p><strong>GM Actions:</strong></p>`;
-    controls += `\n      <ul>`;
-
-    // Status transition options based on current state
-    if (currentStatus === 'not_started') {
-      controls += `\n        <li>📍 <strong>@Text[Start this part]{Click to copy: /mcp update-campaign-progress campaignId:"${campaignId}" partId:"${partId}" newStatus:"in_progress"${parentId ? ` subPartId:"${partId}"` : ''}}</strong></li>`;
-      controls += `\n        <li>⏭️ <strong>@Text[Skip this part]{Click to copy: /mcp update-campaign-progress campaignId:"${campaignId}" partId:"${partId}" newStatus:"skipped"${parentId ? ` subPartId:"${partId}"` : ''}}</strong></li>`;
-    } else if (currentStatus === 'in_progress') {
-      controls += `\n        <li>✅ <strong>@Text[Mark as completed]{Click to copy: /mcp update-campaign-progress campaignId:"${campaignId}" partId:"${partId}" newStatus:"completed"${parentId ? ` subPartId:"${partId}"` : ''}}</strong></li>`;
-      controls += `\n        <li>⏸️ <strong>@Text[Set back to not started]{Click to copy: /mcp update-campaign-progress campaignId:"${campaignId}" partId:"${partId}" newStatus:"not_started"${parentId ? ` subPartId:"${partId}"` : ''}}</strong></li>`;
-    }
-
-    controls += `\n      </ul>`;
-    controls += `\n      <p><small><em>Copy the command and paste it into Claude Desktop to update this ${type} part's status.</em></small></p>`;
-    controls += `\n    </div>`;
-
-    return controls;
-  }
 }
