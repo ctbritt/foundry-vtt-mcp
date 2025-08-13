@@ -159,3 +159,108 @@ export const BridgeStatusSchema = z.object({
   config: FoundryMCPConfigSchema,
   timestamp: z.number(),
 });
+
+/**
+ * Multipart Campaign schemas
+ */
+export const CampaignPartStatusSchema = z.enum([
+  'not_started',
+  'in_progress', 
+  'completed',
+  'skipped'
+]);
+
+export const CampaignPartTypeSchema = z.enum([
+  'main_part',
+  'sub_part', 
+  'chapter',
+  'session',
+  'optional'
+]);
+
+export const LevelRecommendationSchema = z.object({
+  start: z.number().min(1).max(20),
+  end: z.number().min(1).max(20),
+});
+
+export const NPCReferenceSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  actorId: z.string().optional(),
+});
+
+export const ScalingOptionsSchema = z.object({
+  adjustForPartySize: z.boolean().default(true),
+  adjustForLevel: z.boolean().default(true),
+  difficultyModifier: z.number().min(-2).max(2).default(0),
+});
+
+// Sub-part schema (no further nesting)
+export const CampaignSubPartSchema = z.object({
+  id: z.string(),
+  title: z.string().min(1),
+  description: z.string(),
+  type: CampaignPartTypeSchema,
+  status: CampaignPartStatusSchema.default('not_started'),
+  journalId: z.string().optional(),
+  createdAt: z.number().optional(),
+  completedAt: z.number().optional(),
+});
+
+// Main campaign part schema with optional sub-parts
+export const CampaignPartSchema = z.object({
+  id: z.string(),
+  title: z.string().min(1),
+  description: z.string(),
+  type: CampaignPartTypeSchema,
+  status: CampaignPartStatusSchema.default('not_started'),
+  dependencies: z.array(z.string()).default([]),
+  subParts: z.array(CampaignSubPartSchema).optional(),
+  questGiver: NPCReferenceSchema.optional(),
+  levelRecommendation: LevelRecommendationSchema,
+  gmNotes: z.string().default(''),
+  playerContent: z.string().default(''),
+  scaling: ScalingOptionsSchema.default({}),
+  journalId: z.string().optional(),
+  createdAt: z.number().optional(),
+  completedAt: z.number().optional(),
+});
+
+export const CampaignMetadataSchema = z.object({
+  defaultQuestGiver: NPCReferenceSchema.optional(),
+  defaultLocation: z.string().optional(),
+  theme: z.string().optional(),
+  estimatedSessions: z.number().optional(),
+  targetLevelRange: LevelRecommendationSchema.optional(),
+  tags: z.array(z.string()).default([]),
+});
+
+export const CampaignStructureSchema = z.object({
+  id: z.string(),
+  title: z.string().min(1),
+  description: z.string(),
+  parts: z.array(CampaignPartSchema),
+  metadata: CampaignMetadataSchema,
+  dashboardJournalId: z.string().optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export const CampaignTemplateSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  parts: z.array(z.object({
+    title: z.string(),
+    description: z.string(),
+    type: CampaignPartTypeSchema,
+    dependencies: z.array(z.string()).default([]),
+    subParts: z.array(z.object({
+      title: z.string(),
+      description: z.string(),
+      type: CampaignPartTypeSchema,
+    })).optional(),
+    levelRecommendation: LevelRecommendationSchema,
+  })),
+  metadata: CampaignMetadataSchema.partial(),
+});

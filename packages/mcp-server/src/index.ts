@@ -12,6 +12,7 @@ import { SceneTools } from './tools/scene.js';
 import { ActorCreationTools } from './tools/actor-creation.js';
 import { QuestCreationTools } from './tools/quest-creation.js';
 import { DiceRollTools } from './tools/dice-roll.js';
+import { CampaignManagementTools } from './tools/campaign-management.js';
 
 // Utility to log errors and exit gracefully without corrupting stdio
 async function logAndExit(logger: Logger, message: string, error: any): Promise<never> {
@@ -53,6 +54,7 @@ const sceneTools = new SceneTools({ foundryClient, logger });
 const actorCreationTools = new ActorCreationTools({ foundryClient, logger });
 const questCreationTools = new QuestCreationTools({ foundryClient, logger });
 const diceRollTools = new DiceRollTools({ foundryClient, logger });
+const campaignManagementTools = new CampaignManagementTools(foundryClient, logger);
 
 // Create MCP server
 const server = new Server(
@@ -75,6 +77,7 @@ const allTools = [
   ...actorCreationTools.getToolDefinitions(),
   ...questCreationTools.getToolDefinitions(),
   ...diceRollTools.getToolDefinitions(),
+  ...campaignManagementTools.getToolDefinitions(),
 ];
 
 // Register tool list handler
@@ -162,6 +165,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // Phase 4: Dice roll tools
       case 'request-player-rolls':
         result = await diceRollTools.handleRequestPlayerRolls(args);
+        break;
+
+      // Phase 5: Campaign management tools
+      case 'create-campaign-dashboard':
+        result = await campaignManagementTools.handleCreateCampaignDashboard(args);
+        break;
+      case 'update-campaign-progress':
+        result = await campaignManagementTools.handleUpdateCampaignProgress(args);
         break;
 
       default:
