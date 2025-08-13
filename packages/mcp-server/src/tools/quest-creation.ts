@@ -112,7 +112,7 @@ export class QuestCreationTools {
       },
       {
         name: 'update-quest-journal',
-        description: 'Update an existing quest journal with new information or progress. Provide plain text content - this tool will automatically convert it to proper HTML for Foundry VTT v13 ProseMirror editor. Do not use Markdown syntax.',
+        description: 'Update an existing quest journal with new progress information. For Foundry VTT v13 ProseMirror editor compatibility:\n\n✅ USE QUEST-STYLE HTML: Match create-quest-journal formatting\n✅ OR USE PLAIN TEXT: Will be wrapped in <p> tags with line breaks as <br>\n❌ DO NOT USE MARKDOWN: **bold**, *italic*, # headers will be stripped to plain text\n\nQuest-style HTML examples:\n• Sections: "<h2 class=\\"spaced\\">New Discovery</h2>"\n• GM Notes: "<div class=\\"gmnote\\"><p>GM info here</p></div>"\n• Player Info: "<div class=\\"readaloud\\"><p>Player-facing content</p></div>"\n• Plain text: "The party discovered the secret chamber"\n• Avoid: "**The party** discovered the *secret chamber*" (Markdown will be stripped)',
         inputSchema: {
           type: 'object',
           properties: {
@@ -122,7 +122,7 @@ export class QuestCreationTools {
             },
             newContent: {
               type: 'string',
-              description: 'New content to add to the quest journal. Use plain text only - this tool will automatically convert it to HTML format required by Foundry VTT v13 ProseMirror editor.'
+              description: 'Content to add using quest-style HTML or plain text. Quest HTML classes: <h2 class="spaced">Section</h2>, <div class="gmnote"><p>GM info</p></div>, <div class="readaloud"><p>Player content</p></div>, <div class="grid-2">Two columns</div>. Plain text gets wrapped in <p> tags. Markdown will be stripped.'
             },
             updateType: {
               type: 'string',
@@ -280,8 +280,8 @@ export class QuestCreationTools {
       const request = requestSchema.parse(args);
       console.error(`[MCP-UPDATE-DEBUG] Request parsed successfully:`, request);
 
-      // Validate content is plain text (no Markdown)
-      this.validatePlainTextContent(request.newContent);
+      // Auto-convert Markdown to plain text with warning (don't block)
+      request.newContent = this.convertMarkdownToPlainText(request.newContent);
 
       // Get current journal content
       const currentJournal = await this.foundryClient.query('foundry-mcp-bridge.getJournalContent', {
@@ -1057,78 +1057,28 @@ export class QuestCreationTools {
   }
 
   /**
-   * Validate that content is plain text without Markdown syntax
-   * Throws detailed error messages to guide Claude Desktop toward correct usage
+   * Convert Markdown to plain text and warn (don't block the operation)
+   * This ensures the tool works while gently educating about proper format
    */
-  private validatePlainTextContent(content: string): void {
-    const markdownPatterns = [
-      { 
-        pattern: /\*\*(.+?)\*\*/g, 
-        example: '**bold text**', 
-        fix: 'bold text (tool will format automatically)' 
-      },
-      { 
-        pattern: /\*(.+?)\*/g, 
-        example: '*italic text*', 
-        fix: 'italic text (tool will format automatically)' 
-      },
-      { 
-        pattern: /^#{1,6}\s+(.+)/gm, 
-        example: '# Header or ## Subheader', 
-        fix: 'Header (tool will create proper headings)' 
-      },
-      { 
-        pattern: /`(.+?)`/g, 
-        example: '`code text`', 
-        fix: 'code text (tool will format automatically)' 
-      },
-      { 
-        pattern: /\[(.+?)\]\((.+?)\)/g, 
-        example: '[link text](url)', 
-        fix: 'link text (tool will create proper links)' 
-      },
-      { 
-        pattern: /^[-*+]\s+(.+)/gm, 
-        example: '- list item or * list item', 
-        fix: 'list item (tool will create proper lists)' 
-      },
-      { 
-        pattern: /^\d+\.\s+(.+)/gm, 
-        example: '1. numbered item', 
-        fix: 'numbered item (tool will create proper numbered lists)' 
-      },
-      { 
-        pattern: />{1,}\s*(.+)/gm, 
-        example: '> blockquote', 
-        fix: 'blockquote text (tool will format as callout)' 
-      }
-    ];
-
-    const foundPatterns: string[] = [];
-
-    for (const { pattern, example, fix } of markdownPatterns) {
-      if (pattern.test(content)) {
-        foundPatterns.push(`Found "${example}" - use plain text: "${fix}"`);
-      }
+  private convertMarkdownToPlainText(content: string): string {
+    const originalContent = content;
+    
+    // Convert common Markdown patterns to plain text
+    content = content
+      .replace(/\*\*(.+?)\*\*/g, '$1')           // **bold** → bold
+      .replace(/\*(.+?)\*/g, '$1')               // *italic* → italic  
+      .replace(/^#{1,6}\s+(.+)/gm, '$1')        // # headers → headers
+      .replace(/`(.+?)`/g, '$1')                // `code` → code
+      .replace(/\[(.+?)\]\((.+?)\)/g, '$1')     // [text](url) → text
+      .replace(/^[-*+]\s+(.+)/gm, '$1')         // - item → item
+      .replace(/^\d+\.\s+(.+)/gm, '$1')         // 1. item → item
+      .replace(/^>\s*(.+)/gm, '$1');            // > quote → quote
+    
+    // If we made changes, log a warning (but don't block)
+    if (content !== originalContent) {
+      console.error(`[MARKDOWN-WARNING] Automatically converted Markdown formatting to plain text. Future updates will work better with plain text input.`);
     }
-
-    if (foundPatterns.length > 0) {
-      throw new Error(
-        `Markdown syntax detected! This tool requires plain text only and will automatically convert it to proper Foundry VTT HTML.
-
-DETECTED ISSUES:
-${foundPatterns.map(issue => `• ${issue}`).join('\n')}
-
-EXAMPLE - Instead of:
-"## The Party Discovered
-**Important:** The *ancient tome* contains magical secrets"
-
-USE PLAIN TEXT:
-"The Party Discovered
-Important: The ancient tome contains magical secrets"
-
-The tool will automatically convert this to proper HTML with headings, emphasis, and formatting for Foundry VTT's ProseMirror editor.`
-      );
-    }
+    
+    return content;
   }
 }
