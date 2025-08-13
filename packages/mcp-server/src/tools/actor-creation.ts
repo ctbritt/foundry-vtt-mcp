@@ -173,9 +173,18 @@ export class ActorCreationTools {
         );
       }
 
-      // Step 3: Create the actors via Foundry module
-      const result = await this.foundryClient.query('foundry-mcp-bridge.createActorFromCompendium', {
+      this.logger.info('Selected creature for creation', {
+        name: creatureMatch.name,
+        pack: creatureMatch.packLabel,
+        confidence: creatureMatch.confidence,
         creatureType: parsedRequest.creatureType,
+        customNames: parsedRequest.customNames
+      });
+
+      // Step 3: Create the actors via Foundry module
+      // Pass the specific creature name instead of the descriptive type to avoid search issues
+      const result = await this.foundryClient.query('foundry-mcp-bridge.createActorFromCompendium', {
+        creatureType: creatureMatch.name, // Use the actual creature name, not the descriptive search term
         customNames: parsedRequest.customNames,
         packPreference: creatureMatch.pack,
         quantity: parsedRequest.quantity,
@@ -337,7 +346,13 @@ export class ActorCreationTools {
    */
   private async findBestCreatureMatch(creatureType: string, statBlockHint?: string): Promise<CreatureMatch | null> {
     try {
-      // Search for actors in compendiums
+      // First try enhanced search with descriptive term parsing
+      const enhancedMatch = await this.tryEnhancedCreatureSearch(creatureType, statBlockHint);
+      if (enhancedMatch) {
+        return enhancedMatch;
+      }
+
+      // Fallback to basic search for simple terms
       const searchResults = await this.foundryClient.query('foundry-mcp-bridge.searchCompendium', {
         query: creatureType,
         packType: 'Actor',
@@ -381,6 +396,162 @@ export class ActorCreationTools {
 
     } catch (error) {
       this.logger.error('Failed to find creature match', error);
+      return null;
+    }
+  }
+
+  /**
+   * Try enhanced search for descriptive creature terms
+   */
+  private async tryEnhancedCreatureSearch(creatureType: string, statBlockHint?: string): Promise<CreatureMatch | null> {
+    const cleanType = creatureType.toLowerCase();
+    
+    // Parse descriptive terms that need enhanced search
+    const filters: any = {};
+    let searchQuery = cleanType;
+
+    // Parse creature type descriptions
+    if (cleanType.includes('humanoid')) {
+      filters.creatureType = 'humanoid';
+      searchQuery = cleanType.replace(/\bhumanoid\b/gi, '').trim();
+    } else if (cleanType.includes('dragon')) {
+      filters.creatureType = 'dragon';
+    } else if (cleanType.includes('fiend')) {
+      filters.creatureType = 'fiend';
+    } else if (cleanType.includes('undead')) {
+      filters.creatureType = 'undead';
+    } else if (cleanType.includes('beast')) {
+      filters.creatureType = 'beast';
+    } else if (cleanType.includes('elemental')) {
+      filters.creatureType = 'elemental';
+    }
+
+    // Parse spellcasting hints
+    if (cleanType.includes('spellcaster') || cleanType.includes('mage') || cleanType.includes('wizard') || 
+        cleanType.includes('sorcerer') || cleanType.includes('warlock') || cleanType.includes('cleric')) {
+      filters.spellcaster = true;
+      searchQuery = searchQuery.replace(/\b(spellcaster|mage|wizard|sorcerer|warlock|cleric)\b/gi, '').trim();
+    }
+
+    // Parse legendary actions
+    if (cleanType.includes('legendary') || cleanType.includes('boss')) {
+      filters.hasLegendaryActions = true;
+      searchQuery = searchQuery.replace(/\b(legendary|boss)\b/gi, '').trim();
+    }
+
+    // Parse CR hints from statBlockHint
+    if (statBlockHint) {
+      const crMatch = statBlockHint.match(/\bCR?\s*(\d+)\b/i);
+      if (crMatch) {
+        filters.challengeRating = parseInt(crMatch[1]);
+      }
+    }
+
+    // Only use enhanced search if we have meaningful filters
+    if (Object.keys(filters).length === 0) {
+      return null;
+    }
+
+    try {
+      this.logger.debug('Trying enhanced creature search', { 
+        originalType: creatureType, 
+        searchQuery: searchQuery, 
+        filters 
+      });
+
+      // With enhanced creature index, the query is just for logging - filters do all the work
+      const searchResults = await this.foundryClient.query('foundry-mcp-bridge.searchCompendium', {
+        query: creatureType, // Pass original for logging/debugging
+        packType: 'Actor',
+        filters: filters,
+      });
+
+      this.logger.debug('Enhanced search raw results', {
+        resultsType: typeof searchResults,
+        resultsLength: Array.isArray(searchResults) ? searchResults.length : 'not array',
+        firstResult: Array.isArray(searchResults) && searchResults.length > 0 ? searchResults[0] : null,
+        fullResults: searchResults
+      });
+
+      if (!searchResults || searchResults.length === 0) {
+        this.logger.debug('Enhanced search returned no results, falling back to basic search');
+        return null;
+      }
+
+      // Score enhanced results with preference for simpler, more common creatures
+      const scoredMatches = searchResults.map((result: any) => {
+        let confidence = 0.5; // Base confidence for enhanced search matches
+        
+        // Boost confidence for simpler, more common creature names
+        const nameLower = result.name.toLowerCase();
+        const simpleCreatureNames = ['mage', 'wizard', 'cleric', 'druid', 'sorcerer', 'warlock', 
+                                   'priest', 'acolyte', 'guard', 'knight', 'soldier', 'archer'];
+        
+        // High boost for exact simple matches
+        if (simpleCreatureNames.some(simple => nameLower === simple)) {
+          confidence += 0.4;
+        }
+        // Medium boost for names containing simple terms
+        else if (simpleCreatureNames.some(simple => nameLower.includes(simple))) {
+          confidence += 0.2;
+        }
+        
+        // Prefer creatures with reasonable CR (avoid overpowered options)
+        const cr = result.challengeRating || 0;
+        
+        // If we have a statBlockHint with CR, prefer creatures near that CR
+        if (statBlockHint) {
+          const hintCRMatch = statBlockHint.match(/\bCR?\s*(\d+)(?:-(\d+))?\b/i);
+          if (hintCRMatch) {
+            const targetCR = parseInt(hintCRMatch[1]);
+            const maxCR = hintCRMatch[2] ? parseInt(hintCRMatch[2]) : targetCR;
+            
+            if (cr >= targetCR && cr <= maxCR) {
+              confidence += 0.3; // Perfect CR match
+            } else if (Math.abs(cr - targetCR) <= 1) {
+              confidence += 0.1; // Close CR match
+            }
+          }
+        } else {
+          // Default CR preferences when no hint provided - mild preference for reasonable CR
+          if (cr <= 6) confidence += 0.1; // Slight boost for reasonable CR
+          // No penalty for high CR - let users get what they ask for
+        }
+        
+        // Boost confidence based on search term matches
+        if (searchQuery && searchQuery.length > 0) {
+          confidence += this.calculateNameSimilarity(searchQuery, result.name) * 0.3;
+        }
+        
+        // Only avoid clearly problematic creatures, not just complex ones
+        if (nameLower.includes('template') || nameLower.includes('test') || nameLower.includes('broken')) {
+          confidence -= 0.5;
+        }
+
+        return {
+          name: result.name,
+          type: result.type,
+          pack: result.pack,
+          packLabel: result.packLabel,
+          confidence: Math.min(Math.max(confidence, 0.1), 1.0), // Clamp between 0.1-1.0
+        };
+      });
+
+      scoredMatches.sort((a: CreatureMatch, b: CreatureMatch) => b.confidence - a.confidence);
+      const bestMatch = scoredMatches[0];
+
+      this.logger.debug('Enhanced search result', { 
+        found: !!bestMatch, 
+        name: bestMatch?.name, 
+        confidence: bestMatch?.confidence,
+        totalCandidates: scoredMatches.length,
+        top3: scoredMatches.slice(0, 3).map((m: CreatureMatch) => ({ name: m.name, confidence: m.confidence }))
+      });
+      
+      return bestMatch?.confidence > 0.5 ? bestMatch : null;
+
+    } catch (error) {
+      this.logger.debug('Enhanced search failed, will fallback to basic search', error);
       return null;
     }
   }

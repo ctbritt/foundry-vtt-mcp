@@ -15,6 +15,7 @@ interface QuestJournalRequest {
   questType?: 'main' | 'side' | 'personal' | 'mystery' | 'fetch' | 'escort' | 'kill' | 'collection' | undefined;
   difficulty?: 'easy' | 'medium' | 'hard' | 'deadly' | undefined;
   location?: string | undefined;
+  questGiver?: string | undefined;
   npcName?: string | undefined;
   rewards?: string | undefined;
 }
@@ -70,9 +71,13 @@ export class QuestCreationTools {
               type: 'string',
               description: 'Where the quest takes place (optional)'
             },
+            questGiver: {
+              type: 'string',
+              description: 'Name of the NPC who gives this quest to the party (optional)'
+            },
             npcName: {
               type: 'string',
-              description: 'Name of quest giver or related NPC (optional)'
+              description: 'Name of key NPC this quest involves - could be antagonist, ally, or target (optional)'
             },
             rewards: {
               type: 'string',
@@ -103,27 +108,6 @@ export class QuestCreationTools {
             }
           },
           required: ['journalId', 'npcName', 'relationship']
-        }
-      },
-      {
-        name: 'analyze-campaign-context',
-        description: 'Analyze current campaign state to suggest quest ideas based on existing NPCs, locations, and story elements',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            focusArea: {
-              type: 'string',
-              enum: ['npcs', 'locations', 'items', 'factions', 'plot_threads'],
-              description: 'What aspect of the campaign to analyze for quest opportunities'
-            },
-            questCount: {
-              type: 'number',
-              description: 'Number of quest ideas to generate (default: 3)',
-              minimum: 1,
-              maximum: 10
-            }
-          },
-          required: ['focusArea']
         }
       },
       {
@@ -200,6 +184,7 @@ export class QuestCreationTools {
         questType: z.enum(['main', 'side', 'personal', 'mystery', 'fetch', 'escort', 'kill', 'collection']).optional(),
         difficulty: z.enum(['easy', 'medium', 'hard', 'deadly']).optional(),
         location: z.string().optional(),
+        questGiver: z.string().optional(),
         npcName: z.string().optional(),
         rewards: z.string().optional()
       });
@@ -277,50 +262,14 @@ export class QuestCreationTools {
     }
   }
 
-  /**
-   * Handle analyze campaign context request
-   */
-  async handleAnalyzeCampaignContext(args: any): Promise<any> {
-    try {
-      const requestSchema = z.object({
-        focusArea: z.enum(['npcs', 'locations', 'items', 'factions', 'plot_threads']),
-        questCount: z.number().min(1).max(10).optional().default(3)
-      });
-
-      const request = requestSchema.parse(args);
-
-      // Get world information
-      const worldInfo = await this.foundryClient.query('foundry-mcp-bridge.getWorldInfo', {});
-      const actors = await this.foundryClient.query('foundry-mcp-bridge.listActors', {});
-      const journals = await this.foundryClient.query('foundry-mcp-bridge.listJournals', {});
-
-      if (!worldInfo || !actors || !journals) {
-        throw new Error('Failed to retrieve campaign data');
-      }
-
-      // Generate quest ideas based on campaign context
-      const questIdeas = this.generateQuestIdeas(request.focusArea, request.questCount, {
-        worldInfo,
-        actors,
-        journals
-      });
-
-      return {
-        success: true,
-        focusArea: request.focusArea,
-        questIdeas,
-        campaignAnalysis: this.analyzeCampaignElements(worldInfo, actors, journals)
-      };
-
-    } catch (error) {
-      this.errorHandler.handleToolError(error, 'analyze-campaign-context', 'campaign analysis');
-    }
-  }
+  // REMOVED: analyze-campaign-context tool - was causing too many debugging issues
+  // Enhanced creature index is still available for other tools that need monster detection
 
   /**
    * Handle update quest journal request
    */
   async handleUpdateQuestJournal(args: any): Promise<any> {
+    console.error(`[MCP-UPDATE-DEBUG] handleUpdateQuestJournal called with:`, args);
     try {
       const requestSchema = z.object({
         journalId: z.string().min(1, 'Journal ID is required'),
@@ -329,6 +278,7 @@ export class QuestCreationTools {
       });
 
       const request = requestSchema.parse(args);
+      console.error(`[MCP-UPDATE-DEBUG] Request parsed successfully:`, request);
 
       // Get current journal content
       const currentJournal = await this.foundryClient.query('foundry-mcp-bridge.getJournalContent', {
@@ -336,7 +286,11 @@ export class QuestCreationTools {
       });
 
       if (!currentJournal || currentJournal.error) {
-        throw new Error('Journal not found');
+        throw new Error(`Journal not found: ${currentJournal?.error || 'Journal ID may be invalid'}`);
+      }
+
+      if (!currentJournal.content) {
+        throw new Error('Journal exists but has no content to update');
       }
 
       // Format the update based on type
@@ -346,20 +300,60 @@ export class QuestCreationTools {
         request.updateType
       );
 
+      // Debug: Log content lengths for troubleshooting
+      console.error(`[UPDATE-JOURNAL-DEBUG] Original content length: ${currentJournal.content.length}`);
+      console.error(`[UPDATE-JOURNAL-DEBUG] Updated content length: ${updatedContent.length}`);
+      console.error(`[UPDATE-JOURNAL-DEBUG] Update type: ${request.updateType}`);
+
       // Update the journal
       const result = await this.foundryClient.query('foundry-mcp-bridge.updateJournalContent', {
         journalId: request.journalId,
         content: updatedContent
       });
 
-      if (!result || result.error) {
-        throw new Error('Failed to update quest journal');
+      if (!result) {
+        throw new Error('Failed to update quest journal: No response from Foundry');
+      }
+      
+      if (result.error) {
+        throw new Error(`Failed to update quest journal: ${result.error}`);
+      }
+      
+      if (!result.success) {
+        throw new Error('Failed to update quest journal: Update operation returned failure');
+      }
+
+      // Verify the update by reading the content back
+      const verifyResult = await this.foundryClient.query('foundry-mcp-bridge.getJournalContent', {
+        journalId: request.journalId
+      });
+
+      if (!verifyResult) {
+        throw new Error('Failed to verify journal update: Could not retrieve updated content');
+      }
+
+      // Check if verification content contains the formatted update rather than raw content
+      // Look for timestamp or update section indicators instead of raw text
+      const verificationPassed = verifyResult.content && (
+        verifyResult.content.length > currentJournal.content.length || // Content grew
+        verifyResult.content !== currentJournal.content || // Content changed
+        verifyResult.content.includes(request.newContent) || // Raw content found
+        verifyResult.content.includes('Progress Update') || // Progress update section found
+        verifyResult.content.includes('Quest Complete') || // Completion section found
+        verifyResult.content.includes('Quest Failed') // Failure section found
+      );
+
+      if (!verificationPassed) {
+        throw new Error(`Journal update verification failed: Content was not updated as expected. Original length: ${currentJournal.content.length}, New length: ${verifyResult.content?.length || 0}`);
       }
 
       return {
         success: true,
         updateType: request.updateType,
-        message: `Quest journal updated with ${request.updateType}`
+        message: `Quest journal updated with ${request.updateType}`,
+        verified: true,
+        details: `Content successfully updated and verified. Content length changed from ${currentJournal.content.length} to ${verifyResult.content.length} characters.`,
+        updatedContent: verifyResult.content
       };
 
     } catch (error) {
@@ -496,134 +490,245 @@ export class QuestCreationTools {
 
   /**
    * Generate formatted quest content from request (HTML for Foundry v13 ProseMirror)
+   * Uses professional styling that mimics Lost Mine of Phandelver templates
    */
   private generateQuestContent(request: QuestJournalRequest): string {
-    let content = `<h1>${request.questTitle}</h1>`;
+    // Build the HTML body content using professional template fragments
+    const htmlBody = this.buildStyledQuestContent(request);
     
-    content += `<p><strong>Description</strong>: ${request.questDescription}</p>`;
+    // Wrap in styled template
+    return this.createStyledJournal(request.questTitle, htmlBody);
+  }
+
+  /**
+   * Create a professional styled journal with CSS that mimics Lost Mine of Phandelver
+   */
+  private createStyledJournal(title: string, htmlBody: string): string {
+    return `
+    <section class="mcp-journal">
+      <style>
+        .mcp-journal { --ink:#222; --muted:#666; --paper:#f8f5f2; --gm:#f2f2f2; --accent:#b33; --rule:#ddd; font-size:14px; line-height:1.6; color:var(--ink); }
+        .mcp-journal .wrap { max-width: 980px; margin: 0 auto; padding: 8px 12px 24px; }
+        .mcp-journal h1 { font-size: 28px; letter-spacing: .5px; text-align: center; margin: 8px 0 6px; }
+        .mcp-journal .orn { height: 10px; border: 0; border-top: 2px solid var(--rule); margin: 8px auto 16px; width: 60%; }
+        .mcp-journal h2 { font-size: 20px; margin: 18px 0 6px; }
+        .mcp-journal h3 { font-size: 16px; margin: 16px 0 6px; text-transform: uppercase; letter-spacing: .04em; }
+        .mcp-journal p.lead { font-size: 15px; color: var(--muted); margin: 0 0 10px; }
+        .mcp-journal .readaloud { background: var(--paper); border-left: 4px solid var(--accent); padding: 10px 12px; margin: 12px 0; }
+        .mcp-journal .gmnote { background: var(--gm); border-left: 4px solid #444; padding: 10px 12px; margin: 12px 0; }
+        .mcp-journal ul { margin: 6px 0 10px 18px; }
+        .mcp-journal .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px 24px; }
+        .mcp-journal img { max-width: 100%; height: auto; border-radius: 2px; }
+        .mcp-journal .meta { font-size: 12px; color: var(--muted); margin: 4px 0 12px; }
+        .mcp-journal table { border-collapse: collapse; width: 100%; }
+        .mcp-journal table th, .mcp-journal table td { border-bottom: 1px solid var(--rule); padding: 6px 4px; text-align: left; }
+        .mcp-journal .spaced { margin-top: 14px; }
+      </style>
+
+      <div class="wrap">
+        <h1>${title}</h1>
+        <hr class="orn"/>
+
+        ${htmlBody}
+      </div>
+    </section>`;
+  }
+
+  /**
+   * Build professional quest content using template fragments
+   */
+  private buildStyledQuestContent(request: QuestJournalRequest): string {
+    let htmlBody = '';
     
-    if (request.questType) {
-      content += `<p><strong>Type</strong>: ${request.questType.charAt(0).toUpperCase() + request.questType.slice(1)} Quest</p>`;
+    // Lead paragraph with quest summary  
+    htmlBody += `<p class="lead">${request.questDescription}</p>`;
+    
+    // Background section (if we have enough detail to warrant it)
+    if (request.location || request.questGiver || request.npcName) {
+      htmlBody += '<h2>Background</h2>';
+      let backgroundText = this.generateBackgroundText(request);
+      htmlBody += `<p>${backgroundText}</p>`;
     }
+    
+    // Quest details in two-column layout
+    if (request.questType || request.difficulty || request.location || request.npcName || request.rewards) {
+      htmlBody += '<div class="grid-2">';
+      
+      // Left column - Quest Details
+      htmlBody += '<div><h3>Quest Details</h3><ul>';
+      
+      if (request.questType) {
+        htmlBody += `<li><strong>Type:</strong> ${request.questType.charAt(0).toUpperCase() + request.questType.slice(1)} Quest</li>`;
+      }
+      
+      if (request.difficulty) {
+        htmlBody += `<li><strong>Difficulty:</strong> ${request.difficulty.charAt(0).toUpperCase() + request.difficulty.slice(1)}</li>`;
+      }
+      
+      if (request.location) {
+        htmlBody += `<li><strong>Location:</strong> ${request.location}</li>`;
+      }
+      
+      if (request.questGiver) {
+        htmlBody += `<li><strong>Quest Giver:</strong> ${request.questGiver}</li>`;
+      }
+      
+      if (request.npcName) {
+        htmlBody += `<li><strong>Key NPC:</strong> ${request.npcName}</li>`;
+      }
+      
+      htmlBody += '</ul></div>';
+      
+      // Right column - Rewards & Status
+      htmlBody += '<div><h3>Rewards & Status</h3><ul>';
+      
+      if (request.rewards) {
+        htmlBody += `<li><strong>Rewards:</strong> ${request.rewards}</li>`;
+      }
+      
+      htmlBody += `<li><strong>Status:</strong> Active</li>`;
+      htmlBody += `<li><strong>Created:</strong> ${new Date().toLocaleDateString()}</li>`;
+      
+      htmlBody += '</ul></div>';
+      htmlBody += '</div>'; // Close grid-2
+    }
+    
+    // Adventure Hook section with proper quest giver logic
+    htmlBody += '<h2 class="spaced">Adventure Hook</h2>';
+    htmlBody += '<div class="readaloud">';
+    
+    const hookText = this.generateAdventureHook(request);
+    htmlBody += hookText;
+    htmlBody += '</div>';
+    
+    // GM Notes section with specific guidance
+    htmlBody += '<div class="gmnote">';
+    let gmNotes = '<p><strong>GM Notes:</strong> ';
     
     if (request.difficulty) {
-      content += `<p><strong>Difficulty</strong>: ${request.difficulty.charAt(0).toUpperCase() + request.difficulty.slice(1)}</p>`;
+      gmNotes += `This ${request.difficulty} difficulty quest `;
+    } else {
+      gmNotes += 'This quest ';
     }
+    
+    if (request.questType) {
+      gmNotes += `is designed as a ${request.questType} quest. `;
+    }
+    
+    gmNotes += 'Adjust encounters, NPCs, and obstacles to match your party\'s level and campaign tone. ';
     
     if (request.location) {
-      content += `<p><strong>Location</strong>: ${request.location}</p>`;
-    }
-    
-    if (request.npcName) {
-      content += `<p><strong>Quest Giver</strong>: ${request.npcName}</p>`;
+      gmNotes += `Consider the specific details of ${request.location} in your world. `;
     }
     
     if (request.rewards) {
-      content += `<p><strong>Rewards</strong>: ${request.rewards}</p>`;
+      gmNotes += 'The specified rewards can be modified to better fit your campaign\'s economy and progression.';
+    } else {
+      gmNotes += 'Consider appropriate rewards based on the quest\'s difficulty and your party\'s level.';
     }
     
-    content += `<hr><p><strong>Quest Status</strong>: Active</p><p><strong>Notes</strong>:</p><ul><li>Created: ${new Date().toLocaleDateString()}</li></ul>`;
+    gmNotes += '</p>';
+    htmlBody += gmNotes;
+    htmlBody += '</div>';
     
-    return content;
+    // Quest Objectives section with intelligent objectives
+    htmlBody += '<h2 class="spaced">Quest Objectives</h2>';
+    htmlBody += '<ul>';
+    
+    const objectives = this.generateQuestObjectives(request);
+    objectives.forEach(objective => {
+      htmlBody += `<li>${objective}</li>`;
+    });
+    
+    htmlBody += '</ul>';
+    
+    // Progress tracking section
+    htmlBody += '<h2 class="spaced">Progress Notes</h2>';
+    htmlBody += '<div class="gmnote">';
+    htmlBody += '<p><strong>GM Note:</strong> Use this section to track quest progress, player decisions, and any modifications made during gameplay.</p>';
+    htmlBody += '</div>';
+    
+    return htmlBody;
   }
 
   /**
    * Add NPC link information to journal content (HTML for Foundry v13 ProseMirror)
+   * Maintains professional styling by adding to the grid layout
    */
   private addNPCLinkToJournal(content: string, npcName: string, relationship: string): string {
-    const linkSection = `<p><strong>Related NPCs</strong>:</p><ul><li>${npcName} (${relationship.replace('_', ' ')})</li></ul>`;
+    const relationshipText = relationship.replace('_', ' ');
     
-    // Check if NPC section already exists
-    if (content.includes('<strong>Related NPCs</strong>:')) {
-      // Add to existing list
-      return content.replace('</ul>', `<li>${npcName} (${relationship.replace('_', ' ')})</li></ul>`);
+    // Look for existing Related NPCs section in the grid
+    if (content.includes('<h3>Related NPCs</h3>')) {
+      // Add to existing NPC list
+      return content.replace('</ul></div></div>', `<li><strong>${npcName}:</strong> ${relationshipText}</li></ul></div></div>`);
     } else {
-      // Add new section before closing
-      return content + linkSection;
+      // Find the end of the right column in the grid and add NPC section
+      if (content.includes('<h3>Rewards & Status</h3>')) {
+        const npcSection = `<li><strong>Related NPCs:</strong></li><li><strong>${npcName}:</strong> ${relationshipText}</li>`;
+        return content.replace('</ul></div></div>', `${npcSection}</ul></div></div>`);
+      } else {
+        // If no grid exists, add a new GM note section for NPCs
+        const npcSection = `<div class="gmnote"><p><strong>Related NPCs:</strong> ${npcName} (${relationshipText})</p></div>`;
+        return content.replace('</div></section>', npcSection + '</div></section>');
+      }
     }
   }
 
-  /**
-   * Generate quest ideas based on campaign context
-   */
-  private generateQuestIdeas(focusArea: string, count: number, campaignData: any): any[] {
-    const ideas = [];
-    
-    // This is a simplified version - in a real implementation, this would use more sophisticated analysis
-    switch (focusArea) {
-      case 'npcs':
-        for (let i = 0; i < count; i++) {
-          ideas.push({
-            title: `NPC-focused Quest ${i + 1}`,
-            description: 'A quest involving important NPCs in the campaign',
-            suggestedType: 'side',
-            difficulty: 'medium'
-          });
-        }
-        break;
-      case 'locations':
-        for (let i = 0; i < count; i++) {
-          ideas.push({
-            title: `Location Quest ${i + 1}`,
-            description: 'A quest centered around campaign locations',
-            suggestedType: 'main',
-            difficulty: 'medium'
-          });
-        }
-        break;
-      default:
-        for (let i = 0; i < count; i++) {
-          ideas.push({
-            title: `Campaign Quest ${i + 1}`,
-            description: `A quest based on ${focusArea}`,
-            suggestedType: 'side',
-            difficulty: 'medium'
-          });
-        }
-    }
-    
-    return ideas;
-  }
+  // REMOVED: Campaign analysis quest generation methods
 
-  /**
-   * Analyze campaign elements for context
-   */
-  private analyzeCampaignElements(worldInfo: any, actors: any, journals: any): any {
-    return {
-      totalActors: actors?.length || 0,
-      totalJournals: journals?.length || 0,
-      worldName: worldInfo?.name || 'Unknown',
-      analysisDate: new Date().toISOString()
-    };
-  }
+  // REMOVED: performReconnaissance method - was only used by campaign analysis
+
+  // REMOVED: All campaign analysis helper methods - these were only used by the removed tool
 
   /**
    * Format quest update based on type (HTML for Foundry v13 ProseMirror)
+   * Maintains professional styling by adding updates with proper section headings
    */
   private formatQuestUpdate(currentContent: string, newContent: string, updateType: string): string {
     const timestamp = new Date().toLocaleDateString();
-    const formattedContent = this.formatTextForFoundry(newContent);
+    const formattedContent = this.formatUpdateContentForFoundry(newContent);
     let updateSection = '';
     
-    switch (updateType) {
-      case 'progress':
-        updateSection = `<p><strong>Progress Update</strong> (${timestamp}):</p>${formattedContent}`;
-        break;
-      case 'completion':
-        updateSection = `<p><strong>Quest Completed</strong> (${timestamp}):</p>${formattedContent}`;
-        // Update status
-        currentContent = currentContent.replace('<strong>Quest Status</strong>: Active', '<strong>Quest Status</strong>: Completed');
-        break;
-      case 'failure':
-        updateSection = `<p><strong>Quest Failed</strong> (${timestamp}):</p>${formattedContent}`;
-        currentContent = currentContent.replace('<strong>Quest Status</strong>: Active', '<strong>Quest Status</strong>: Failed');
-        break;
-      case 'modification':
-        updateSection = `<p><strong>Quest Modified</strong> (${timestamp}):</p>${formattedContent}`;
-        break;
+    // Check if content already has custom headings (like "<h2>The Thorned Grove</h2>")
+    const hasCustomHeading = /<h[1-6][^>]*>.*<\/h[1-6]>/i.test(newContent);
+    
+    if (hasCustomHeading) {
+      // Content already has themed sections - insert directly as peer sections
+      // This allows custom headings like "<h2>The Thorned Grove</h2>" to be main sections
+      updateSection = formattedContent;
+    } else {
+      // Create styled update section with generic headings
+      switch (updateType) {
+        case 'progress':
+          updateSection = `<h2 class="spaced">Progress Update - ${timestamp}</h2><div class="gmnote">${formattedContent}</div>`;
+          break;
+        case 'completion':
+          updateSection = `<h2 class="spaced">Quest Completed - ${timestamp}</h2><div class="readaloud">${formattedContent}</div>`;
+          break;
+        case 'failure':
+          updateSection = `<h2 class="spaced">Quest Failed - ${timestamp}</h2><div class="gmnote">${formattedContent}</div>`;
+          break;
+        case 'modification':
+          updateSection = `<h2 class="spaced">Quest Modified - ${timestamp}</h2><div class="gmnote">${formattedContent}</div>`;
+          break;
+      }
     }
     
-    return currentContent + updateSection;
+    // Update quest status in the grid for completion/failure
+    if (updateType === 'completion') {
+      currentContent = currentContent.replace('<li><strong>Status:</strong> Active</li>', '<li><strong>Status:</strong> Completed</li>');
+    } else if (updateType === 'failure') {
+      currentContent = currentContent.replace('<li><strong>Status:</strong> Active</li>', '<li><strong>Status:</strong> Failed</li>');
+    }
+    
+    // Add the update section before the closing section tag
+    // Handle both possible closing patterns (with/without spacing)
+    if (currentContent.includes('</div>\n    </section>')) {
+      return currentContent.replace('</div>\n    </section>', updateSection + '</div>\n    </section>');
+    } else {
+      return currentContent.replace('</div></section>', updateSection + '</div></section>');
+    }
   }
 
   /**
@@ -653,6 +758,43 @@ export class QuestCreationTools {
   }
 
   /**
+   * Format update content for Foundry VTT (preserve HTML like create-quest-journal)
+   * Allows custom section headings and themed content with proper CSS classes
+   */
+  private formatUpdateContentForFoundry(content: string): string {
+    // Trim whitespace
+    const trimmed = content.trim();
+    
+    if (!trimmed) {
+      return '<p></p>';
+    }
+    
+    // Check if content already contains HTML tags - preserve them like create-quest-journal
+    const hasHTMLTags = /<[^>]+>/.test(trimmed);
+    
+    if (hasHTMLTags) {
+      // Content already has HTML structure - return as-is for themed sections
+      // This allows custom headings like "<h2>The Thorned Grove</h2>" to work properly
+      return trimmed;
+    } else {
+      // Plain text content - convert to paragraphs with line break handling
+      const paragraphs = trimmed.split('\n\n').filter(p => p.trim().length > 0);
+      
+      if (paragraphs.length === 0) {
+        return '<p></p>';
+      }
+      
+      if (paragraphs.length === 1) {
+        // Single paragraph - handle line breaks within it
+        return `<p>${paragraphs[0].replace(/\n/g, '<br>')}</p>`;
+      }
+      
+      // Multiple paragraphs
+      return paragraphs.map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
+    }
+  }
+
+  /**
    * Check if a journal appears to be quest-related
    */
   private isQuestRelated(journalName: string): boolean {
@@ -672,5 +814,242 @@ export class QuestCreationTools {
     const end = Math.min(content.length, index + maxLength);
     
     return '...' + content.substring(start, end) + '...';
+  }
+
+  /**
+   * Determine if the named NPC is an antagonist based on quest description
+   */
+  private determineNPCRole(questDescription: string, npcName?: string): 'quest_giver' | 'antagonist' | 'neutral' {
+    if (!npcName) return 'neutral';
+    
+    const desc = questDescription.toLowerCase();
+    const name = npcName.toLowerCase();
+    
+    // Keywords that suggest antagonist role
+    const antagonistKeywords = [
+      'stop', 'defeat', 'confront', 'evil', 'corrupt', 'mad', 'insane', 
+      'villain', 'enemy', 'threat', 'dangerous', 'rogue', 'gone wrong',
+      'obsessed', 'twisted', 'dark', 'forbidden', 'necro', 'tyrant',
+      'bandit', 'cultist', 'possessed', 'cursed', 'malevolent'
+    ];
+    
+    // Check if the description mentions the NPC in an antagonistic context
+    const hasAntagonistContext = antagonistKeywords.some(keyword => 
+      desc.includes(keyword) && desc.includes(name)
+    );
+    
+    // Check for explicit antagonist phrasing
+    const explicitAntagonist = desc.includes(`${name} has`) || 
+                              desc.includes(`${name} is`) ||
+                              desc.includes(`confront ${name}`) ||
+                              desc.includes(`stop ${name}`) ||
+                              desc.includes(`defeat ${name}`);
+    
+    return hasAntagonistContext || explicitAntagonist ? 'antagonist' : 'quest_giver';
+  }
+
+  /**
+   * Generate background text using separate quest giver and NPC parameters
+   */
+  private generateBackgroundText(request: QuestJournalRequest): string {
+    let backgroundText = '';
+    
+    if (request.questGiver && request.location) {
+      backgroundText = `This quest is provided by ${request.questGiver} and takes place in ${request.location}. `;
+    } else if (request.questGiver) {
+      backgroundText = `This quest is provided by ${request.questGiver}. `;
+    } else if (request.location) {
+      backgroundText = `This quest takes place in ${request.location}. `;
+    } else {
+      backgroundText = `This quest involves the party's investigation and action. `;
+    }
+    
+    if (request.npcName) {
+      backgroundText += `The quest centers around ${request.npcName}. `;
+    }
+    
+    backgroundText += 'Adjust these details as needed for your campaign.';
+    return backgroundText;
+  }
+
+  /**
+   * Generate adventure hook with proper quest giver logic and complete sentences
+   */
+  private generateAdventureHook(request: QuestJournalRequest): string {
+    let hookText = '<p><strong>Read-Aloud:</strong> ';
+    
+    if (request.questGiver) {
+      // Use the explicit quest giver with crafted dialogue
+      hookText += `${request.questGiver} approaches the party with evident concern. `;
+      
+      if (request.location && request.npcName) {
+        hookText += `"There's been trouble in ${request.location} involving ${request.npcName}. `;
+      } else if (request.location) {
+        hookText += `"Something troubling is happening in ${request.location}. `;
+      } else if (request.npcName) {
+        hookText += `"I need to tell you about ${request.npcName}. `;
+      } else {
+        hookText += `"I have urgent news that requires your attention. `;
+      }
+      
+      // Create specific dialogue based on quest type and content
+      const hookDialogue = this.generateQuestGiverDialogue(request);
+      hookText += `${hookDialogue}" ${request.questGiver} pauses, clearly hoping you'll take action.`;
+      
+    } else {
+      // No explicit quest giver - use rumors/reports format
+      if (request.location) {
+        hookText += `Troubling reports reach your ears concerning ${request.location}. `;
+      } else {
+        hookText += `Disturbing rumors begin circulating in the area. `;
+      }
+      
+      // Create specific rumor content
+      const rumorContent = this.generateRumorHook(request);
+      hookText += `${rumorContent} The situation clearly demands investigation before it worsens.`;
+    }
+    
+    hookText += '</p>';
+    return hookText;
+  }
+
+  /**
+   * Generate quest giver dialogue based on quest content
+   */
+  private generateQuestGiverDialogue(request: QuestJournalRequest): string {
+    const desc = request.questDescription.toLowerCase();
+    
+    if (desc.includes('blight') || desc.includes('corruption')) {
+      return `A strange blight is spreading, and crops are turning into something unnatural. The situation grows worse by the day`;
+    } else if (desc.includes('missing') || desc.includes('disappeared')) {
+      return `People have been going missing, and we fear the worst. Someone needs to find out what's happening`;
+    } else if (desc.includes('bandits') || desc.includes('raiders')) {
+      return `Bandits have been terrorizing travelers and merchants. The roads aren't safe anymore`;
+    } else if (desc.includes('monster') || desc.includes('creature')) {
+      return `A dangerous creature has been spotted in the area. People are too frightened to venture out`;
+    } else if (desc.includes('cult') || desc.includes('ritual')) {
+      return `Strange rituals and suspicious activities have been observed. Something dark is stirring`;
+    } else if (request.npcName && this.isLikelyAntagonist(request.questDescription, request.npcName)) {
+      return `${request.npcName} has become a threat to everyone in the area. Someone must stop them before more people get hurt`;
+    } else {
+      // Generic but compelling dialogue
+      return `The situation has become dangerous, and innocent people are at risk. We need heroes to set things right`;
+    }
+  }
+
+  /**
+   * Generate rumor-based hook content
+   */
+  private generateRumorHook(request: QuestJournalRequest): string {
+    const desc = request.questDescription.toLowerCase();
+    
+    if (desc.includes('wizard') || desc.includes('magic')) {
+      return `Witnesses speak of uncontrolled magical experiments and their terrifying consequences.`;
+    } else if (desc.includes('blight') || desc.includes('corruption')) {
+      return `Farmers report that healthy crops are turning into hostile, animate creatures overnight.`;
+    } else if (desc.includes('missing') || desc.includes('disappeared')) {
+      return `Several people have vanished without a trace, leaving behind only mysterious circumstances.`;
+    } else if (request.npcName) {
+      return `Local tales speak of ${request.npcName} and the growing danger they represent to the community.`;
+    } else {
+      return `Multiple witnesses describe strange and threatening events that demand immediate investigation.`;
+    }
+  }
+
+  /**
+   * Generate specific quest objectives based on type and parameters
+   */
+  private generateQuestObjectives(request: QuestJournalRequest): string[] {
+    const objectives: string[] = [];
+    
+    // Add type-specific objectives
+    if (request.questType === 'fetch') {
+      objectives.push('Locate and retrieve the required item or information');
+      if (request.location) {
+        objectives.push(`Travel to ${request.location} and investigate thoroughly`);
+      }
+    } else if (request.questType === 'escort') {
+      objectives.push('Safely escort the target to their destination');
+      objectives.push('Protect against threats along the journey');
+    } else if (request.questType === 'kill') {
+      objectives.push('Eliminate the specified threat or enemy');
+      objectives.push('Ensure the area is secure from further danger');
+    } else if (request.questType === 'mystery') {
+      objectives.push('Investigate the mysterious circumstances');
+      objectives.push('Gather evidence and interview witnesses');
+      objectives.push('Uncover the truth behind the events');
+    } else {
+      // For side quests and others, generate smart objectives
+      if (request.npcName && this.isLikelyAntagonist(request.questDescription, request.npcName)) {
+        objectives.push(`Investigate the situation involving ${request.npcName}`);
+        if (request.location) {
+          objectives.push(`Travel to ${request.location} and assess the threat`);
+        }
+        objectives.push(`Deal with ${request.npcName} as appropriate`);
+      } else {
+        // Create objectives from key action words in description
+        const actionWords = this.extractActionObjectives(request.questDescription);
+        actionWords.forEach(action => objectives.push(action));
+      }
+    }
+    
+    // Add reporting objective based on quest giver
+    if (request.questGiver) {
+      objectives.push(`Report back to ${request.questGiver} upon completion`);
+    } else {
+      objectives.push('Report the outcome to the appropriate authorities');
+    }
+    
+    // Add rewards objective if specified
+    if (request.rewards) {
+      objectives.push('Claim the promised rewards');
+    }
+    
+    return objectives;
+  }
+
+  /**
+   * Check if NPC is likely an antagonist based on description
+   */
+  private isLikelyAntagonist(description: string, npcName: string): boolean {
+    const desc = description.toLowerCase();
+    const name = npcName.toLowerCase().split(' ')[0]; // Use first name only
+    
+    const antagonistPhrases = [
+      'confront', 'stop', 'defeat', 'gone wrong', 'obsessed', 
+      'mad', 'threat', 'corrupted', 'evil', 'dangerous'
+    ];
+    
+    return antagonistPhrases.some(phrase => desc.includes(phrase)) && desc.includes(name);
+  }
+
+  /**
+   * Extract actionable objectives from quest description
+   */
+  private extractActionObjectives(description: string): string[] {
+    const objectives: string[] = [];
+    
+    // Look for action phrases in the description
+    if (description.includes('investigate')) {
+      objectives.push('Investigate the mysterious circumstances');
+    }
+    if (description.includes('navigate')) {
+      objectives.push('Navigate through the dangerous area');
+    }
+    if (description.includes('confront')) {
+      objectives.push('Confront the source of the problem');
+    }
+    if (description.includes('stop') || description.includes('prevent')) {
+      objectives.push('Prevent further spread of the threat');
+    }
+    
+    // If no specific actions found, create generic objective
+    if (objectives.length === 0) {
+      const words = description.split(' ');
+      const briefObjective = words.slice(0, 15).join(' ') + (words.length > 15 ? '...' : '');
+      objectives.push(`Complete the main objective: ${briefObjective}`);
+    }
+    
+    return objectives;
   }
 }

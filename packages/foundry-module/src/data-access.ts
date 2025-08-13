@@ -950,12 +950,10 @@ export class FoundryDataAccess {
           
           const enhancedResult = await this.listCreaturesByCriteria(criteria);
           
-          // Filter results by name query
-          const filteredResults = enhancedResult.creatures.filter(creature => 
-            creature.name.toLowerCase().includes(query.toLowerCase())
-          );
+          // No name filtering needed - trust the enhanced creature index!
+          const filteredResults = enhancedResult.creatures;
           
-          console.log(`[${this.moduleId}] Enhanced search found ${filteredResults.length} results for "${query}"`);
+          console.log(`[${this.moduleId}] Enhanced search found ${filteredResults.length} results using enhanced creature index`);
           
           // Convert to CompendiumSearchResult format
           return filteredResults.map(creature => ({
@@ -1815,14 +1813,12 @@ export class FoundryDataAccess {
     }
 
     try {
-      // Create a deep copy and remove sensitive fields
-      const sanitized = foundry.utils.deepClone(data);
+      // removeSensitiveFields now returns a sanitized copy
+      const sanitized = this.removeSensitiveFields(data);
       
-      // Remove common sensitive fields
-      this.removeSensitiveFields(sanitized);
-      
-      // Ensure JSON serializable
-      return JSON.parse(JSON.stringify(sanitized));
+      // Use custom JSON serializer to avoid deprecated property warnings
+      const jsonString = this.safeJSONStringify(sanitized);
+      return JSON.parse(jsonString);
     } catch (error) {
       console.warn(`[${this.moduleId}] Failed to sanitize data:`, error);
       return {};
@@ -1830,29 +1826,99 @@ export class FoundryDataAccess {
   }
 
   /**
-   * Remove sensitive fields from data object
+   * Remove sensitive fields from data object with circular reference protection
+   * Returns a sanitized copy instead of modifying the original
    */
-  private removeSensitiveFields(obj: any): void {
-    if (typeof obj !== 'object' || obj === null) {
-      return;
+  private removeSensitiveFields(obj: any, visited: WeakSet<object> = new WeakSet(), depth: number = 0): any {
+    // Handle primitives
+    if (obj === null || typeof obj !== 'object') {
+      return obj;
     }
 
+    // Safety depth limit to prevent extremely deep recursion
+    if (depth > 50) {
+      console.warn(`[${this.moduleId}] Sanitization depth limit reached at depth ${depth}`);
+      return '[Max depth reached]';
+    }
+
+    // Check for circular reference
+    if (visited.has(obj)) {
+      return '[Circular Reference]';
+    }
+
+    // Mark this object as visited
+    visited.add(obj);
+
+    try {
+      // Handle arrays
+      if (Array.isArray(obj)) {
+        return obj.map(item => this.removeSensitiveFields(item, visited, depth + 1));
+      }
+
+      // Create a new sanitized object
+      const sanitized: any = {};
+      
+      for (const [key, value] of Object.entries(obj)) {
+        // Skip sensitive and problematic fields entirely
+        if (this.isSensitiveOrProblematicField(key)) {
+          continue;
+        }
+
+        // Skip most private properties except essential ones
+        if (key.startsWith('_') && !['_id', '_stats', '_source'].includes(key)) {
+          continue;
+        }
+
+        // Recursively sanitize the value
+        sanitized[key] = this.removeSensitiveFields(value, visited, depth + 1);
+      }
+
+      return sanitized;
+
+    } catch (error) {
+      console.warn(`[${this.moduleId}] Error during sanitization at depth ${depth}:`, error);
+      return '[Sanitization failed]';
+    }
+  }
+
+  /**
+   * Check if a field should be excluded from sanitized output
+   */
+  private isSensitiveOrProblematicField(key: string): boolean {
     const sensitiveKeys = [
       'password', 'token', 'secret', 'key', 'auth',
       'credential', 'session', 'cookie', 'private'
     ];
 
-    for (const key of sensitiveKeys) {
-      if (key in obj) {
-        delete obj[key];
-      }
-    }
+    const problematicKeys = [
+      'parent', '_parent', 'collection', 'apps', 'document', '_document',
+      'constructor', 'prototype', '__proto__', 'valueOf', 'toString'
+    ];
 
-    // Recursively clean nested objects
-    for (const [, value] of Object.entries(obj)) {
-      if (typeof value === 'object' && value !== null) {
-        this.removeSensitiveFields(value);
-      }
+    // Skip deprecated ability save properties that trigger warnings
+    const deprecatedKeys = [
+      'save' // Skip the deprecated 'save' property on abilities
+    ];
+
+    return sensitiveKeys.includes(key) || problematicKeys.includes(key) || deprecatedKeys.includes(key);
+  }
+
+  /**
+   * Custom JSON serializer that handles Foundry objects safely
+   */
+  private safeJSONStringify(obj: any): string {
+    try {
+      return JSON.stringify(obj, (key, value) => {
+        // Skip deprecated properties during JSON serialization
+        if (key === 'save' && typeof value === 'object' && value !== null) {
+          // If this looks like a deprecated ability save object, skip it
+          return undefined;
+        }
+        return value;
+      });
+    } catch (error) {
+      console.warn(`[${this.moduleId}] JSON stringify failed, using fallback:`, error);
+      return '{}';
     }
   }
 
@@ -1942,7 +2008,7 @@ export class FoundryDataAccess {
         name: request.name,
         pages: [{
           type: 'text',
-          name: request.name,
+          name: 'Quest Details', // Use generic page name to avoid title repetition
           text: {
             content: request.content
           }
@@ -2011,7 +2077,7 @@ export class FoundryDataAccess {
   async updateJournalContent(request: { journalId: string; content: string }): Promise<{ success: boolean }> {
     this.validateFoundryState();
 
-    // Use permission system for journal updates
+    // Use permission system for journal updates - treating as createActor permission level
     const permissionCheck = permissionManager.checkWritePermission('createActor', {
       quantity: 1, // Treat journal updates similar to actor creation for permissions
     });
@@ -2021,28 +2087,38 @@ export class FoundryDataAccess {
     }
 
     try {
+      console.log(`[FOUNDRY-DEBUG] Attempting to update journal ${request.journalId}`);
+      console.log(`[FOUNDRY-DEBUG] New content length: ${request.content.length}`);
+      
       const journal = game.journal.get(request.journalId);
       if (!journal) {
+        console.error(`[FOUNDRY-DEBUG] Journal not found: ${request.journalId}`);
         throw new Error('Journal entry not found');
       }
+
+      console.log(`[FOUNDRY-DEBUG] Found journal: ${journal.name}, Pages: ${journal.pages.size}`);
 
       // Update first text page or create one if none exists
       const firstPage = journal.pages.find((page: any) => page.type === 'text');
       
       if (firstPage) {
+        console.log(`[FOUNDRY-DEBUG] Updating existing page: ${firstPage.name}`);
         // Update existing page
         await firstPage.update({
           'text.content': request.content,
         });
+        console.log(`[FOUNDRY-DEBUG] Page update completed successfully`);
       } else {
+        console.log(`[FOUNDRY-DEBUG] Creating new text page`);
         // Create new text page
         await journal.createEmbeddedDocuments('JournalEntryPage', [{
           type: 'text',
-          name: journal.name,
+          name: 'Quest Details', // Use generic page name to avoid title repetition
           text: {
             content: request.content,
           },
         }]);
+        console.log(`[FOUNDRY-DEBUG] New page creation completed successfully`);
       }
 
       this.auditLog('updateJournalContent', request, 'success');
@@ -2086,6 +2162,14 @@ export class FoundryDataAccess {
       if (!compendiumEntry) {
         throw new Error(`No compendium entry found for "${request.creatureType}"`);
       }
+
+      console.log(`[${this.moduleId}] SELECTED CREATURE for creation:`, {
+        name: compendiumEntry.name,
+        pack: compendiumEntry.packLabel,
+        id: compendiumEntry.id,
+        creatureType: request.creatureType,
+        customNames: request.customNames
+      });
 
       // Get full compendium document
       const sourceDoc = await this.getCompendiumDocumentFull(
@@ -2345,28 +2429,67 @@ export class FoundryDataAccess {
    * Create actor from source document with custom name
    */
   private async createActorFromSource(sourceDoc: CompendiumEntryFull, customName: string): Promise<any> {
-    // Clone the source data
-    const actorData = foundry.utils.deepClone(sourceDoc.fullData) as any;
-    
-    // Apply customizations
-    actorData.name = customName;
-    
-    // Remove source-specific identifiers
-    delete actorData._id;
-    delete actorData.folder;
-    delete actorData.sort;
-    
-    // Ensure required fields are present
-    if (!actorData.name) actorData.name = customName;
-    if (!actorData.type) actorData.type = sourceDoc.type || 'npc';
-    
-    // Create the new actor
-    const createdDocs = await Actor.createDocuments([actorData]);
-    if (!createdDocs || createdDocs.length === 0) {
-      throw new Error('Failed to create actor document');
-    }
+    console.log(`[${this.moduleId}] CREATING ACTOR from source:`, {
+      sourceName: sourceDoc.name,
+      sourceType: sourceDoc.type,
+      customName: customName,
+      hasFullData: !!sourceDoc.fullData,
+      fullDataKeys: sourceDoc.fullData ? Object.keys(sourceDoc.fullData) : []
+    });
 
-    return createdDocs[0];
+    try {
+      // Clone the source data
+      const actorData = foundry.utils.deepClone(sourceDoc.fullData) as any;
+      
+      console.log(`[${this.moduleId}] ACTOR DATA cloned, structure:`, {
+        name: actorData.name,
+        type: actorData.type,
+        hasSystem: !!actorData.system,
+        hasItems: !!actorData.items,
+        hasEffects: !!actorData.effects,
+        itemsCount: actorData.items?.length || 0,
+        effectsCount: actorData.effects?.length || 0
+      });
+      
+      // Apply customizations
+      actorData.name = customName;
+      
+      // Remove source-specific identifiers
+      delete actorData._id;
+      delete actorData.folder;
+      delete actorData.sort;
+      
+      // Ensure required fields are present
+      if (!actorData.name) actorData.name = customName;
+      if (!actorData.type) actorData.type = sourceDoc.type || 'npc';
+      
+      console.log(`[${this.moduleId}] CALLING Actor.createDocuments with:`, {
+        name: actorData.name,
+        type: actorData.type
+      });
+      
+      // Create the new actor
+      const createdDocs = await Actor.createDocuments([actorData]);
+      if (!createdDocs || createdDocs.length === 0) {
+        throw new Error('Failed to create actor document');
+      }
+
+      console.log(`[${this.moduleId}] ACTOR CREATED successfully:`, {
+        id: createdDocs[0].id,
+        name: createdDocs[0].name,
+        type: createdDocs[0].type
+      });
+
+      return createdDocs[0];
+    } catch (error) {
+      console.error(`[${this.moduleId}] ACTOR CREATION FAILED:`, {
+        sourceName: sourceDoc.name,
+        customName: customName,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        errorStack: error instanceof Error ? error.stack : undefined
+      });
+      throw error;
+    }
   }
 
   /**
@@ -2942,5 +3065,17 @@ export class FoundryDataAccess {
         ui.notifications?.error('Failed to execute roll');
       }
     });
+  }
+
+  /**
+   * Get enhanced creature index for campaign analysis
+   */
+  async getEnhancedCreatureIndex(): Promise<any[]> {
+    this.validateFoundryState();
+
+    // Get the enhanced creature index (builds if needed)
+    const enhancedCreatures = await this.persistentIndex.getEnhancedIndex();
+    
+    return enhancedCreatures || [];
   }
 }

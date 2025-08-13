@@ -56,6 +56,9 @@ export class QueryHandlers {
     // Phase 4: Dice roll queries
     CONFIG.queries[`${modulePrefix}.request-player-rolls`] = this.handleRequestPlayerRolls.bind(this);
 
+    // Enhanced creature index for campaign analysis
+    CONFIG.queries[`${modulePrefix}.getEnhancedCreatureIndex`] = this.handleGetEnhancedCreatureIndex.bind(this);
+
     console.log(`[${MODULE_ID}] Registered ${Object.keys(CONFIG.queries).filter(k => k.startsWith(modulePrefix)).length} query handlers`);
   }
 
@@ -533,6 +536,25 @@ export class QueryHandlers {
       return await this.dataAccess.requestPlayerRolls(data);
     } catch (error) {
       throw new Error(`Failed to request player rolls: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Handle get enhanced creature index request
+   */
+  async handleGetEnhancedCreatureIndex(): Promise<any> {
+    try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
+      this.dataAccess.validateFoundryState();
+
+      return await this.dataAccess.getEnhancedCreatureIndex();
+    } catch (error) {
+      throw new Error(`Failed to get enhanced creature index: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 }

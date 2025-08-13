@@ -36,10 +36,10 @@ async function logAndExit(logger: Logger, message: string, error: any): Promise<
 
 // Initialize logger - disable console for MCP mode to avoid JSON parsing errors
 const logger = new Logger({
-  level: config.logLevel,
+  level: 'debug', // Force debug level for troubleshooting
   format: config.logFormat,
   enableConsole: false, // Disabled for MCP stdio communication
-  enableFile: false, // Disabled for performance - use only for debugging
+  enableFile: true, // Temporarily enabled for debugging campaign analysis issue
   filePath: 'logs/mcp-server.log', // Fixed log file path
 });
 
@@ -148,9 +148,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         break;
       case 'link-quest-to-npc':
         result = await questCreationTools.handleLinkQuestToNPC(args);
-        break;
-      case 'analyze-campaign-context':
-        result = await questCreationTools.handleAnalyzeCampaignContext(args);
         break;
       case 'update-quest-journal':
         result = await questCreationTools.handleUpdateQuestJournal(args);
