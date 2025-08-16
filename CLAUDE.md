@@ -12,18 +12,85 @@
 - Authentication: Foundry session-based (no external tokens needed)
 - Testing: Vitest framework, Winston logging, Zod validation
 
-## Current Status - August 13, 2025
-**Version:** 0.4.7 - Complete Multipart Campaign System 
-**Current State:** All 19 tools working perfectly, multipart campaign system ready for merge to sacred master!
+## Current Status - August 15, 2025
+**Version:** 0.4.7 - Roll Button State Synchronization Issue (In Progress)
+**Current State:** All 22 tools working perfectly, but roll button UI synchronization still needs debugging
+
+### 🚨 CRITICAL DEVELOPMENT PRINCIPLE 🚨
+**No graceful fallbacks, clear error handling and logging**
+- All error conditions must fail fast with explicit error messages
+- No silent failures or "best effort" approaches
+- Comprehensive logging at every critical decision point
+- Clear error propagation up the stack
 
 ### ✅ What's Working Perfectly:
-- **Core MCP Server**: 19 tools including complete multipart campaign system
+- **Core MCP Server**: 22 tools including complete actor ownership system
 - **Foundry Module**: Complete integration, GM-only security  
 - **Enhanced Creature Index**: Instant searches vs 2+ minute timeouts
 - **Professional Quest Creation**: All logic errors and styling issues resolved
 - **Quest Update System**: HTML parsing, custom sections, accurate tool descriptions
 - **Multipart Campaign System**: Dashboard generation, progress tracking, template system
-- **All Core Features**: Actor creation, compendium search, dice rolls, quest & campaign management
+- **Actor Ownership System**: Comprehensive permission management with backup/restore
+- **All Core Features**: Actor creation, compendium search, dice rolls, quest & campaign management, ownership control
+
+### 🔧 ACTIVE DEBUGGING - August 15, 2025: Roll Button State Synchronization Issue
+
+#### **Problem Statement:**
+Roll buttons work functionally (roll execution and state saving) but UI synchronization fails:
+1. **Button text not updating**: Shows original text "🎲 Animal handling Skill Check (Public)" instead of "✓ Rolled"
+2. **Cross-client sync failure**: Other players don't see button state changes in real-time  
+3. **Reload persistence issue**: After reload, buttons are non-clickable (good) but show original text and green styling (bad)
+
+#### **Root Cause Analysis:**
+- onChange callback system saves roll states properly to world settings
+- Settings synchronization across clients works (confirmed via console logging)
+- Issue is in the **visual UI update timing and DOM manipulation**
+- renderChatMessageHTML hook vs onChange callback timing conflicts
+- jQuery selector specificity and CSS class application problems
+
+#### **Comprehensive Fix Attempts Made Today:**
+✅ **Enhanced Button State Refresh Logic** (data-access.ts:3639)
+- Improved selectors: `.mcp-roll-button, button[data-button-id]`  
+- Added `applyRolledButtonState()` method for consistent state application
+- Enhanced error handling and retry logic
+
+✅ **Improved renderChatMessageHTML Hook** (main.ts:481) 
+- Added `ensureButtonStatesForMessage()` safety check method
+- 100ms delay to catch buttons missed by onChange callback
+- Better logging for debugging state application
+
+✅ **Enhanced onChange Callback Timing** (settings.ts:215)
+- Increased delay from 50ms to 150ms for better settings propagation
+- Added retry logic (500ms delay) if first attempt fails  
+- Reduced logging verbosity to avoid spam
+
+✅ **CSS-Based Visual State Management** (module.css:117)
+- Added `.mcp-button-rolled` class with `!important` rules
+- Proper hover and disabled state handling
+- Updated `applyRolledButtonState()` to rely on CSS classes vs inline styles
+
+✅ **Cross-Client State Preservation**
+- Enhanced visibility logic to skip styling for already-rolled buttons
+- Improved state checking in click handlers to prevent double-rolling
+
+#### **Current Status:**
+- **Functional behavior**: ✅ Working (buttons save state, become non-clickable)
+- **Visual synchronization**: ❌ Still failing (text/styling not updating)
+- **Cross-client real-time**: ❌ Still failing (onChange fires but UI doesn't update)
+
+#### **Next Session Debugging Strategy:**
+1. **Add comprehensive DOM inspection logging** to see exactly when CSS classes are applied/removed
+2. **Test onChange callback firing sequence** with detailed timestamps across multiple clients
+3. **Investigate Foundry chat message caching** - messages may be cached and not re-rendering
+4. **Consider force-refresh approach** - manually trigger chat message re-render after state changes
+5. **Debug jQuery selector reliability** - ensure buttons are found consistently across all contexts
+6. **Test CSS specificity** - verify `.mcp-button-rolled` class actually overrides existing styles
+
+#### **Files Modified for Roll Button Fix:**
+- `packages/foundry-module/src/data-access.ts` - Enhanced state refresh and application logic
+- `packages/foundry-module/src/main.ts` - Improved renderChatMessageHTML hook
+- `packages/foundry-module/src/settings.ts` - Better onChange callback timing and error handling  
+- `packages/foundry-module/styles/module.css` - CSS-based visual state management
 
 ### 🎯 Major Bug Fixes Completed - August 12, 2025:
 
@@ -95,7 +162,21 @@
 ✅ **Clean Dashboard Design**: Elegant journal-based interface without UI clutter
 ✅ **Tool Description Accuracy**: Fixed misleading update-quest-journal documentation for proper HTML guidance
 
-**Final Tool Count:** 19 total MCP tools - Complete campaign management system ready for production!
+### Phase 7: Actor Ownership & Player Assignment System (3 tools) - COMPLETED AUGUST 15, 2025 ✅
+✅ **assign-actor-ownership** - Comprehensive permission management for actors to players with bulk operations
+✅ **remove-actor-ownership** - Clean ownership removal with confirmation safeguards
+✅ **list-actor-ownership** - Complete ownership status reporting with permission level details
+
+**🔧 Core Capabilities Delivered:**
+✅ **Individual Assignments**: "Assign Aragorn to John as owner" with smart player/character resolution
+✅ **Bulk Operations**: "Give party observer access to all friendly NPCs" with confirmation prompts
+✅ **Permission Levels**: Full support for NONE, LIMITED, OBSERVER, OWNER with Foundry API integration
+✅ **Smart Resolution**: Player matching by name, partial matching, and character ownership detection
+✅ **Safety Features**: Confirmation prompts for bulk operations and dangerous changes
+✅ **Scene Integration**: Automatic friendly NPC detection using token disposition settings
+✅ **Claude Memory**: Rollback capabilities handled through conversation context (no backup files needed)
+
+**Final Tool Count:** 22 total MCP tools - Streamlined actor ownership management system ready for production!
 
 ## Technical Implementation Notes
 
@@ -477,10 +558,19 @@ foundry-vtt-mcp/
 
 ---
 
-## Final Status - August 13, 2025 - READY FOR SACRED MASTER MERGE! 🛡️
-**Core Product:** ✅ Complete and working perfectly (19 tools operational)
-**Quest System:** ✅ HTML parsing, custom sections, accurate tool descriptions
+## Final Status - August 15, 2025 - ROLL BUTTON UI DEBUGGING IN PROGRESS 🔧
+**Core Product:** ✅ Complete and working perfectly (22 tools operational)
+**Quest System:** ✅ HTML parsing, custom sections, accurate tool descriptions  
 **Campaign System:** ✅ Complete multipart campaign architecture with dashboard and progress tracking
-**GitHub Status:** ✅ All changes pushed to feature/multipart-campaign-v0.4.7 branch
+**Ownership System:** ✅ Streamlined actor permission management with Claude-based rollback capabilities
+**Roll Button Issue:** 🚨 Functional behavior works, but UI synchronization still fails (see debugging section above)
+**GitHub Status:** ✅ All changes on feature/multipart-campaign-v0.4.7 branch
 **Sacred Master:** ✅ Protected at v0.4.6 (perfect rollback point)
-**Ready for Production:** 🎯 Tomorrow we merge to the sacred master branch!
+**Next Session Priority:** 🎯 Fix roll button UI synchronization using comprehensive DOM inspection and timing analysis
+
+### **Remember for Next Session:**
+1. **No graceful fallbacks** - Add explicit error logging at every DOM manipulation point
+2. **Test with multiple browser tabs** to verify cross-client behavior in controlled environment
+3. **Add CSS specificity debugging** to verify why `.mcp-button-rolled` class isn't taking effect
+4. **Consider chat message re-render approach** instead of just DOM manipulation
+5. **Check Foundry v13 specific chat rendering changes** that might affect our approach

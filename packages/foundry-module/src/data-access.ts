@@ -2556,13 +2556,21 @@ export class FoundryDataAccess {
     this.validateFoundryState();
 
     try {
-      // Resolve target player from character name or player name
+      // Resolve target player from character name or player name with enhanced error handling
       const playerInfo = this.resolveTargetPlayer(data.targetPlayer);
       if (!playerInfo.found) {
+        // Provide structured error message for MCP that Claude Desktop can understand
+        const errorMessage = playerInfo.errorMessage || `Could not find player or character: ${data.targetPlayer}`;
+        console.log(`[${MODULE_ID}] Player resolution failed:`, {
+          targetPlayer: data.targetPlayer,
+          errorType: playerInfo.errorType,
+          errorMessage: errorMessage
+        });
+        
         return {
           success: false,
           message: '',
-          error: `Could not find player or character: ${data.targetPlayer}`
+          error: errorMessage
         };
       }
 
@@ -2572,6 +2580,9 @@ export class FoundryDataAccess {
       // Generate roll button HTML
       const buttonId = foundry.utils.randomID();
       const buttonLabel = this.buildRollButtonLabel(data.rollType, data.rollTarget, data.isPublic);
+      
+      // Check if this type of roll was already performed (optional: could check for duplicate recent rolls)
+      // For now, we'll just create the button and let the rendering logic handle the state restoration
       
       // Debug logging for button creation
       console.log(`[${MODULE_ID}] Creating roll button:`, {
@@ -2592,14 +2603,13 @@ export class FoundryDataAccess {
           ${data.flavor ? `<p><strong>Context:</strong> ${data.flavor}</p>` : ''}
           
           <!-- Single Roll Button (clickable by both character owner and GM) -->
-          <button class="mcp-roll-button" 
+          <button class="mcp-roll-button mcp-button-active" 
                   data-button-id="${buttonId}"
                   data-roll-formula="${rollFormula}"
                   data-roll-label="${buttonLabel}"
                   data-is-public="${data.isPublic}"
                   data-character-id="${playerInfo.character?.id || ''}"
-                  data-target-user-id="${playerInfo.user?.id || ''}"
-                  style="background: #4CAF50; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;">
+                  data-target-user-id="${playerInfo.user?.id || ''}">
             🎲 ${buttonLabel}
           </button>
         </div>
@@ -2638,9 +2648,26 @@ export class FoundryDataAccess {
         speaker: ChatMessage.getSpeaker({ actor: game.user }),
         style: (CONST as any).CHAT_MESSAGE_STYLES?.OTHER || 0, // Use style instead of deprecated type
         whisper: whisperTargets,
+        flags: {
+          [MODULE_ID]: {
+            rollButtons: {
+              [buttonId]: {
+                rolled: false,
+                rollFormula: rollFormula,
+                rollLabel: buttonLabel,
+                isPublic: data.isPublic,
+                characterId: playerInfo.character?.id || '',
+                targetUserId: playerInfo.user?.id || ''
+              }
+            }
+          }
+        }
       };
 
-      await ChatMessage.create(messageData);
+      const chatMessage = await ChatMessage.create(messageData);
+      
+      // Store message ID for later updates
+      this.saveRollButtonMessageId(buttonId, chatMessage.id);
 
       // Note: Click handlers are attached globally via renderChatMessageHTML hook in main.ts
       // This ensures all users get the handlers when they see the message
@@ -2661,50 +2688,95 @@ export class FoundryDataAccess {
   }
 
   /**
-   * Resolve target player from character name or player name
-   * Supports partial matching and case-insensitive search
+   * Enhanced player resolution with offline/non-existent player detection
+   * Supports partial matching and provides structured error messages for MCP
    */
   private resolveTargetPlayer(targetPlayer: string): {
     found: boolean;
     user?: User;
     character?: Actor;
     targetName: string;
+    errorType?: 'PLAYER_OFFLINE' | 'PLAYER_NOT_FOUND' | 'CHARACTER_NOT_FOUND';
+    errorMessage?: string;
   } {
     const searchTerm = targetPlayer.toLowerCase().trim();
     
-    console.log(`[${MODULE_ID}] Resolving target player: "${targetPlayer}" (normalized: "${searchTerm}")`);
+    console.log(`[${MODULE_ID}] Enhanced player resolution for: "${targetPlayer}" (normalized: "${searchTerm}")`);
     
-    // FIRST try to find by player name (prioritize player names over character names for better UX)
-    let user = game.users?.find((u: User) => 
+    // FIRST: Check all registered users (both active and inactive) for player name match
+    const allUsers = Array.from(game.users?.values() || []);
+    
+    // Try exact player name match first (active and inactive users)
+    let user = allUsers.find((u: User) => 
       u.name?.toLowerCase() === searchTerm
     );
     
     if (user) {
-      console.log(`[${MODULE_ID}] Found exact player name match: ${user.name}`);
+      const isActive = user.active;
+      console.log(`[${MODULE_ID}] Found exact player name match: ${user.name}, active: ${isActive}`);
+      
+      if (!isActive) {
+        // Player exists but is offline
+        return {
+          found: false,
+          user,
+          targetName: user.name || 'Unknown Player',
+          errorType: 'PLAYER_OFFLINE',
+          errorMessage: `Player "${user.name}" is registered but not currently logged in. They need to be online to receive roll requests.`
+        };
+      }
+      
+      // Find the player's character for roll calculations
+      const playerCharacter = game.actors?.find((actor: Actor) => {
+        if (!user) return false;
+        return actor.testUserPermission(user, 'OWNER') && !user.isGM;
+      });
+      
       return {
         found: true,
         user,
+        ...(playerCharacter && { character: playerCharacter }), // Include character only if found
         targetName: user.name || 'Unknown Player'
       };
     }
     
-    // If no exact player match, try partial player match
+    // Try partial player name match (active and inactive users)
     if (!user) {
-      user = game.users?.find((u: User) => {
+      user = allUsers.find((u: User) => {
         return Boolean(u.name && u.name.toLowerCase().includes(searchTerm));
       });
       
       if (user) {
-        console.log(`[${MODULE_ID}] Found partial player name match: ${user.name}`);
+        const isActive = user.active;
+        console.log(`[${MODULE_ID}] Found partial player name match: ${user.name}, active: ${isActive}`);
+        
+        if (!isActive) {
+          // Player exists but is offline
+          return {
+            found: false,
+            user,
+            targetName: user.name || 'Unknown Player',
+            errorType: 'PLAYER_OFFLINE',
+            errorMessage: `Player "${user.name}" is registered but not currently logged in. They need to be online to receive roll requests.`
+          };
+        }
+        
+        // Find the player's character for roll calculations
+        const playerCharacter = game.actors?.find((actor: Actor) => {
+          if (!user) return false;
+          return actor.testUserPermission(user, 'OWNER') && !user.isGM;
+        });
+        
         return {
           found: true,
           user,
+          ...(playerCharacter && { character: playerCharacter }), // Include character only if found
           targetName: user.name || 'Unknown Player'
         };
       }
     }
 
-    // THEN try to find by character name (exact match, then partial match)
+    // SECOND: Try to find by character name (exact match, then partial match)
     let character = game.actors?.find((actor: Actor) => 
       actor.name?.toLowerCase() === searchTerm && actor.hasPlayerOwner
     );
@@ -2713,7 +2785,7 @@ export class FoundryDataAccess {
       console.log(`[${MODULE_ID}] Found exact character match: ${character.name}`);
     }
     
-    // If no exact match, try partial match
+    // If no exact character match, try partial match
     if (!character) {
       character = game.actors?.find((actor: Actor) => {
         return Boolean(actor.name && actor.name.toLowerCase().includes(searchTerm) && actor.hasPlayerOwner);
@@ -2726,23 +2798,37 @@ export class FoundryDataAccess {
 
     if (character) {
       // Find the actual player owner (not GM) of this character
-      const user = game.users?.find((u: User) => 
+      const ownerUser = allUsers.find((u: User) => 
         character.testUserPermission(u, 'OWNER') && !u.isGM
       );
       
       console.log(`[${MODULE_ID}] Character ownership resolution for ${character.name}:`, {
         characterId: character.id,
         hasPlayerOwner: character.hasPlayerOwner,
-        foundUser: user ? `${user.name} (ID: ${user.id})` : 'None',
-        allOwners: game.users?.filter(u => character.testUserPermission(u, 'OWNER')).map(u => `${u.name} (GM: ${u.isGM})`) || []
+        foundUser: ownerUser ? `${ownerUser.name} (ID: ${ownerUser.id}, active: ${ownerUser.active})` : 'None',
+        allOwners: allUsers.filter(u => character.testUserPermission(u, 'OWNER')).map(u => `${u.name} (GM: ${u.isGM}, active: ${u.active})`)
       });
       
-      if (user) {
+      if (ownerUser) {
+        const isOwnerActive = ownerUser.active;
+        
+        if (!isOwnerActive) {
+          // Character owner exists but is offline
+          return {
+            found: false,
+            user: ownerUser,
+            character,
+            targetName: ownerUser.name || 'Unknown Player',
+            errorType: 'PLAYER_OFFLINE',
+            errorMessage: `Player "${ownerUser.name}" (owner of character "${character.name}") is registered but not currently logged in. They need to be online to receive roll requests.`
+          };
+        }
+        
         return {
           found: true,
-          user,
+          user: ownerUser,
           character,
-          targetName: user.name || 'Unknown Player'
+          targetName: ownerUser.name || 'Unknown Player'
         };
       } else {
         // No player owner found - character is GM-only controlled
@@ -2756,10 +2842,34 @@ export class FoundryDataAccess {
       }
     }
 
-    // No player or character found
+    // THIRD: Check if the search term might be a character that exists but has no player owner
+    const anyCharacter = game.actors?.find((actor: Actor) => {
+      if (!actor.name) return false;
+      return actor.name.toLowerCase() === searchTerm || 
+             actor.name.toLowerCase().includes(searchTerm);
+    });
+    
+    if (anyCharacter && !anyCharacter.hasPlayerOwner) {
+      console.log(`[${MODULE_ID}] Found character "${anyCharacter.name}" but it has no player owner (GM-controlled)`);
+      return {
+        found: true,
+        character: anyCharacter,
+        targetName: anyCharacter.name || 'Unknown Character'
+        // No user for GM-controlled characters
+      };
+    }
+
+    // No player or character found at all
+    console.log(`[${MODULE_ID}] No match found for "${targetPlayer}". Available players:`, {
+      allUsers: allUsers.map(u => ({ name: u.name, active: u.active, isGM: u.isGM })),
+      playerCharacters: game.actors?.filter(a => a.hasPlayerOwner).map(a => a.name) || []
+    });
+    
     return {
       found: false,
-      targetName: targetPlayer
+      targetName: targetPlayer,
+      errorType: 'PLAYER_NOT_FOUND',
+      errorMessage: `No player or character named "${targetPlayer}" found. Available players: ${allUsers.filter(u => !u.isGM).map(u => u.name).join(', ') || 'none'}`
     };
   }
 
@@ -2901,6 +3011,11 @@ export class FoundryDataAccess {
   }
 
   /**
+   * Restore roll button states from persistent storage
+   * Called when chat messages are rendered to maintain state across sessions
+   */
+
+  /**
    * Attach click handlers to roll buttons and handle visibility
    * Called by global renderChatMessageHTML hook in main.ts
    */
@@ -2908,12 +3023,17 @@ export class FoundryDataAccess {
     const currentUserId = game.user?.id;
     const isGM = game.user?.isGM;
     
+    // Note: Roll state restoration now handled by ChatMessage content, not DOM manipulation
+    
     // Handle button visibility and styling based on permissions and public/private status
+    // IMPORTANT: Skip styling for buttons that are already in rolled state
     html.find('.mcp-roll-button').each((_index, element) => {
       const button = $(element);
       const targetUserId = button.data('target-user-id');
       const isPublicRollRaw = button.data('is-public');
       const isPublicRoll = isPublicRollRaw === true || isPublicRollRaw === 'true';
+      
+      // Note: No need to check for rolled state - ChatMessage.update() replaces buttons with completion status
       
       // Determine if user can interact with this button
       const canClickButton = isGM || (targetUserId && targetUserId === currentUserId);
@@ -2966,6 +3086,13 @@ export class FoundryDataAccess {
       // Ignore clicks on disabled buttons
       if (button.prop('disabled')) {
         console.log(`[${MODULE_ID}] Ignoring click on disabled button`);
+        return;
+      }
+
+      // Get button info for processing
+      const buttonId = button.data('button-id');
+      if (!buttonId) {
+        console.warn(`[${MODULE_ID}] Button missing button-id data attribute`);
         return;
       }
       
@@ -3057,8 +3184,25 @@ export class FoundryDataAccess {
           rollMode: rollMode
         });
 
-        // Disable the button after rolling
-        button.prop('disabled', true).text('✓ Rolled');
+        // Update the ChatMessage to reflect rolled state
+        const buttonId = button.data('button-id');
+        if (buttonId && game.user?.id) {
+          try {
+            console.log(`[${MODULE_ID}] Attempting to update ChatMessage for button ${buttonId}`);
+            await this.updateRollButtonMessage(buttonId, game.user.id, rollLabel);
+            console.log(`[${MODULE_ID}] Successfully updated ChatMessage for button ${buttonId}`);
+          } catch (updateError) {
+            console.error(`[${MODULE_ID}] Failed to update chat message:`, updateError);
+            console.error(`[${MODULE_ID}] Error details:`, updateError instanceof Error ? updateError.stack : updateError);
+            // Fall back to DOM manipulation if message update fails
+            button.prop('disabled', true).text('✓ Rolled');
+          }
+        } else {
+          console.warn(`[${MODULE_ID}] Cannot update ChatMessage - missing buttonId or userId:`, {
+            buttonId,
+            userId: game.user?.id
+          });
+        }
         
       } catch (error) {
         console.error(`[${MODULE_ID}] Error executing roll:`, error);
@@ -3078,4 +3222,490 @@ export class FoundryDataAccess {
     
     return enhancedCreatures || [];
   }
+
+  /**
+   * Save roll button state to persistent storage
+   */
+  async saveRollState(buttonId: string, userId: string): Promise<void> {
+    // LEGACY METHOD - Redirecting to new ChatMessage.update() system
+    console.log(`[${MODULE_ID}] Legacy saveRollState called for button ${buttonId} - redirecting to new system`);
+    
+    try {
+      // Use the new ChatMessage.update() approach instead
+      const rollLabel = 'Legacy Roll'; // We don't have the label here, use generic
+      await this.updateRollButtonMessage(buttonId, userId, rollLabel);
+      console.log(`[${MODULE_ID}] Legacy saveRollState successfully redirected to new system`);
+    } catch (error) {
+      console.error(`[${MODULE_ID}] Legacy saveRollState redirect failed:`, error);
+      // Don't throw - we don't want to break the old system completely
+    }
+  }
+
+  /**
+   * Get roll button state from persistent storage
+   */
+  getRollState(buttonId: string): { rolled: boolean; rolledBy?: string; rolledByName?: string; timestamp?: number } | null {
+    this.validateFoundryState();
+
+    try {
+      const rollStates = game.settings.get(MODULE_ID, 'rollStates') || {};
+      return rollStates[buttonId] || null;
+    } catch (error) {
+      console.error(`[${MODULE_ID}] Error getting roll state:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Save button ID to message ID mapping for ChatMessage updates
+   */
+  saveRollButtonMessageId(buttonId: string, messageId: string): void {
+    try {
+      const buttonMessageMap = game.settings.get(MODULE_ID, 'buttonMessageMap') || {};
+      buttonMessageMap[buttonId] = messageId;
+      game.settings.set(MODULE_ID, 'buttonMessageMap', buttonMessageMap);
+      console.log(`[${MODULE_ID}] Mapped button ${buttonId} to message ${messageId}`);
+    } catch (error) {
+      console.error(`[${MODULE_ID}] Error saving button-message mapping:`, error);
+    }
+  }
+
+  /**
+   * Get message ID for a roll button
+   */
+  getRollButtonMessageId(buttonId: string): string | null {
+    try {
+      const buttonMessageMap = game.settings.get(MODULE_ID, 'buttonMessageMap') || {};
+      return buttonMessageMap[buttonId] || null;
+    } catch (error) {
+      console.error(`[${MODULE_ID}] Error getting button-message mapping:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Get roll button state from ChatMessage flags
+   */
+  getRollStateFromMessage(chatMessage: any, buttonId: string): any {
+    try {
+      const rollButtons = chatMessage.getFlag(MODULE_ID, 'rollButtons');
+      return rollButtons?.[buttonId] || null;
+    } catch (error) {
+      console.error(`[${MODULE_ID}] Error getting roll state from message:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Update the ChatMessage to replace button with rolled state
+   */
+  async updateRollButtonMessage(buttonId: string, userId: string, rollLabel: string): Promise<void> {
+    try {
+      console.log(`[${MODULE_ID}] updateRollButtonMessage called with:`, { buttonId, userId, rollLabel });
+
+      // Get the message ID for this button
+      const messageId = this.getRollButtonMessageId(buttonId);
+      console.log(`[${MODULE_ID}] Retrieved message ID: ${messageId} for button ${buttonId}`);
+      
+      if (!messageId) {
+        throw new Error(`No message ID found for button ${buttonId}`);
+      }
+
+      // Get the chat message
+      const chatMessage = game.messages?.get(messageId);
+      console.log(`[${MODULE_ID}] Retrieved ChatMessage:`, {
+        messageId,
+        messageExists: !!chatMessage,
+        messageAuthor: chatMessage?.author?.name,
+        currentUser: game.user?.name,
+        isGM: game.user?.isGM
+      });
+      
+      if (!chatMessage) {
+        throw new Error(`ChatMessage ${messageId} not found`);
+      }
+
+      const rolledByName = game.users?.get(userId)?.name || 'Unknown';
+      const timestamp = new Date().toLocaleString();
+
+      // Check permissions before attempting update
+      const canUpdate = chatMessage.canUserModify(game.user, 'update');
+      console.log(`[${MODULE_ID}] Permission check - can user ${game.user?.name} update message: ${canUpdate}`);
+
+      if (!canUpdate && !game.user?.isGM) {
+        // Non-GM user cannot update message - request GM to do it via socket
+        console.log(`[${MODULE_ID}] User ${game.user?.name} cannot update message, requesting GM assistance`);
+        
+        // Find online GM
+        const onlineGM = game.users?.find(u => u.isGM && u.active);
+        if (!onlineGM) {
+          throw new Error('No Game Master is online to update the chat message');
+        }
+
+        // Send socket request to GM
+        if (game.socket) {
+          game.socket.emit('module.foundry-mcp-bridge', {
+            type: 'requestMessageUpdate',
+            buttonId: buttonId,
+            userId: userId,
+            rollLabel: rollLabel,
+            messageId: messageId,
+            fromUserId: game.user.id,
+            targetGM: onlineGM.id
+          });
+          console.log(`[${MODULE_ID}] Requested GM ${onlineGM.name} to update message ${messageId}`);
+          return; // Exit early - GM will handle the update
+        } else {
+          throw new Error('Socket not available for GM communication');
+        }
+      }
+
+      // Update the message flags to mark button as rolled
+      const currentFlags = chatMessage.flags || {};
+      const moduleFlags = currentFlags[MODULE_ID] || {};
+      const rollButtons = moduleFlags.rollButtons || {};
+      
+      rollButtons[buttonId] = {
+        ...rollButtons[buttonId],
+        rolled: true,
+        rolledBy: userId,
+        rolledByName: rolledByName,
+        timestamp: Date.now()
+      };
+
+      // Create the rolled state HTML
+      const rolledHtml = `
+        <div class="mcp-roll-request" style="margin: 10px 0; padding: 10px; border: 1px solid #ccc; border-radius: 5px; background: #f9f9f9;">
+          <p><strong>Roll Request:</strong> ${rollLabel}</p>
+          <p><strong>Status:</strong> ✅ <strong>Completed by ${rolledByName}</strong> at ${timestamp}</p>
+        </div>
+      `;
+
+      console.log(`[${MODULE_ID}] Attempting ChatMessage.update() for message ${messageId}`);
+
+      // Update the message content and flags
+      await chatMessage.update({
+        content: rolledHtml,
+        flags: {
+          ...currentFlags,
+          [MODULE_ID]: {
+            ...moduleFlags,
+            rollButtons: rollButtons
+          }
+        }
+      });
+
+      console.log(`[${MODULE_ID}] Successfully updated ChatMessage ${messageId} for rolled button ${buttonId}`);
+
+    } catch (error) {
+      console.error(`[${MODULE_ID}] Error updating roll button message:`, error);
+      console.error(`[${MODULE_ID}] Error stack:`, error instanceof Error ? error.stack : error);
+      throw error;
+    }
+  }
+
+  /**
+   * Request GM to save roll state (for non-GM users who can't write to world settings)
+   */
+  requestRollStateSave(buttonId: string, userId: string): void {
+    // LEGACY METHOD - Redirecting to new ChatMessage.update() system
+    console.log(`[${MODULE_ID}] Legacy requestRollStateSave called for button ${buttonId} - redirecting to new system`);
+    
+    try {
+      // Use the new ChatMessage.update() approach instead
+      const rollLabel = 'Legacy Roll'; // We don't have the label here, use generic
+      this.updateRollButtonMessage(buttonId, userId, rollLabel)
+        .then(() => {
+          console.log(`[${MODULE_ID}] Legacy requestRollStateSave successfully redirected to new system`);
+        })
+        .catch((error) => {
+          console.error(`[${MODULE_ID}] Legacy requestRollStateSave redirect failed:`, error);
+          // If the new system fails, just log it - don't use the old socket system
+        });
+    } catch (error) {
+      console.error(`[${MODULE_ID}] Error in legacy requestRollStateSave redirect:`, error);
+    }
+  }
+
+  /**
+   * Broadcast roll state change to all connected users for real-time sync
+   */
+  broadcastRollState(buttonId: string, _rollState: any): void {
+    // LEGACY METHOD - No longer needed with ChatMessage.update() system
+    console.log(`[${MODULE_ID}] Legacy broadcastRollState called for button ${buttonId} - ignoring (ChatMessage.update handles sync)`);
+    // ChatMessage.update() automatically broadcasts to all clients, so this method is no longer needed
+  }
+
+  /**
+   * Clean up old roll states (optional maintenance)
+   * Removes roll states older than 30 days to prevent storage bloat
+   */
+  async cleanOldRollStates(): Promise<number> {
+    this.validateFoundryState();
+
+    try {
+      const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+      const rollStates = game.settings.get(MODULE_ID, 'rollStates') || {};
+      let cleanedCount = 0;
+
+      // Remove old roll states
+      for (const [buttonId, rollState] of Object.entries(rollStates)) {
+        if (rollState && typeof rollState === 'object' && 'timestamp' in rollState) {
+          const timestamp = (rollState as any).timestamp;
+          if (typeof timestamp === 'number' && timestamp < thirtyDaysAgo) {
+            delete rollStates[buttonId];
+            cleanedCount++;
+          }
+        }
+      }
+
+      if (cleanedCount > 0) {
+        await game.settings.set(MODULE_ID, 'rollStates', rollStates);
+        console.log(`[${MODULE_ID}] Cleaned up ${cleanedCount} old roll states`);
+      }
+
+      return cleanedCount;
+    } catch (error) {
+      console.error(`[${MODULE_ID}] Error cleaning old roll states:`, error);
+      return 0;
+    }
+  }
+
+  /**
+   * Set actor ownership permission for a user
+   */
+  async setActorOwnership(data: { actorId: string; userId: string; permission: number }): Promise<{ success: boolean; message: string; error?: string }> {
+    this.validateFoundryState();
+
+    try {
+      const actor = game.actors?.get(data.actorId);
+      if (!actor) {
+        return { success: false, error: `Actor not found: ${data.actorId}`, message: '' };
+      }
+
+      const user = game.users?.get(data.userId);
+      if (!user) {
+        return { success: false, error: `User not found: ${data.userId}`, message: '' };
+      }
+
+      // Get current ownership
+      const currentOwnership = (actor as any).ownership || {};
+      const newOwnership = { ...currentOwnership };
+      
+      // Set the new permission level
+      newOwnership[data.userId] = data.permission;
+
+      // Update the actor
+      await actor.update({ ownership: newOwnership });
+
+      const permissionNames = { 0: 'NONE', 1: 'LIMITED', 2: 'OBSERVER', 3: 'OWNER' };
+      const permissionName = permissionNames[data.permission as keyof typeof permissionNames] || data.permission.toString();
+
+      return {
+        success: true,
+        message: `Set ${actor.name} ownership to ${permissionName} for ${user.name}`,
+      };
+    } catch (error) {
+      console.error(`[${MODULE_ID}] Error setting actor ownership:`, error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        message: '',
+      };
+    }
+  }
+
+  /**
+   * Get actor ownership information
+   */
+  async getActorOwnership(data: { actorIdentifier?: string; playerIdentifier?: string }): Promise<any> {
+    this.validateFoundryState();
+
+    try {
+      const actors = data.actorIdentifier ? 
+        (data.actorIdentifier === 'all' ? Array.from(game.actors || []) : [this.findActorByIdentifier(data.actorIdentifier)].filter(Boolean)) :
+        Array.from(game.actors || []);
+
+      const users = data.playerIdentifier ?
+        [game.users?.getName(data.playerIdentifier) || game.users?.get(data.playerIdentifier)].filter(Boolean) :
+        Array.from(game.users || []);
+
+      const ownershipInfo = [];
+      const permissionNames = { 0: 'NONE', 1: 'LIMITED', 2: 'OBSERVER', 3: 'OWNER' };
+
+      for (const actor of actors) {
+        const actorInfo: any = {
+          id: actor.id,
+          name: actor.name,
+          type: actor.type,
+          ownership: [],
+        };
+
+        for (const user of users.filter(u => u && !u.isGM)) {
+          const permission = actor.testUserPermission(user, 'OWNER') ? 3 :
+                            actor.testUserPermission(user, 'OBSERVER') ? 2 :
+                            actor.testUserPermission(user, 'LIMITED') ? 1 : 0;
+          
+          actorInfo.ownership.push({
+            userId: user!.id,
+            userName: user!.name,
+            permission: permissionNames[permission as keyof typeof permissionNames],
+            numericPermission: permission,
+          });
+        }
+
+        ownershipInfo.push(actorInfo);
+      }
+
+      return ownershipInfo;
+    } catch (error) {
+      console.error(`[${MODULE_ID}] Error getting actor ownership:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Find actor by name or ID
+   */
+  private findActorByIdentifier(identifier: string): any {
+    return game.actors?.get(identifier) || 
+           game.actors?.getName(identifier) ||
+           Array.from(game.actors || []).find(a => 
+             a.name?.toLowerCase().includes(identifier.toLowerCase())
+           );
+  }
+
+  /**
+   * Get friendly NPCs from current scene
+   */
+  async getFriendlyNPCs(): Promise<Array<{id: string, name: string}>> {
+    this.validateFoundryState();
+
+    try {
+      const scene = game.scenes?.find(s => s.active);
+      if (!scene) {
+        return [];
+      }
+
+      const friendlyTokens = scene.tokens.filter((token: any) => 
+        token.disposition === 1 // FRIENDLY disposition
+      );
+
+      return friendlyTokens.map((token: any) => ({
+        id: token.actor?.id || token.id || '',
+        name: token.name || token.actor?.name || 'Unknown',
+      })).filter(t => t.id);
+    } catch (error) {
+      console.error(`[${MODULE_ID}] Error getting friendly NPCs:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Get party characters (player-owned actors)
+   */
+  async getPartyCharacters(): Promise<Array<{id: string, name: string}>> {
+    this.validateFoundryState();
+
+    try {
+      const partyCharacters = Array.from(game.actors || []).filter(actor => 
+        actor.hasPlayerOwner && actor.type === 'character'
+      );
+
+      return partyCharacters.map(actor => ({
+        id: actor.id || '',
+        name: actor.name || 'Unknown',
+      })).filter(c => c.id);
+    } catch (error) {
+      console.error(`[${MODULE_ID}] Error getting party characters:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Get connected players (excluding GM)
+   */
+  async getConnectedPlayers(): Promise<Array<{id: string, name: string}>> {
+    this.validateFoundryState();
+
+    try {
+      const connectedPlayers = Array.from(game.users || []).filter(user => 
+        user.active && !user.isGM
+      );
+
+      return connectedPlayers.map(user => ({
+        id: user.id || '',
+        name: user.name || 'Unknown',
+      })).filter(u => u.id);
+    } catch (error) {
+      console.error(`[${MODULE_ID}] Error getting connected players:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Find players by identifier with partial matching
+   */
+  async findPlayers(data: { identifier: string; allowPartialMatch?: boolean; includeCharacterOwners?: boolean }): Promise<Array<{id: string, name: string}>> {
+    this.validateFoundryState();
+
+    try {
+      const { identifier, allowPartialMatch = true, includeCharacterOwners = true } = data;
+      const searchTerm = identifier.toLowerCase();
+      const players = [];
+
+      // Direct user name matching
+      for (const user of game.users || []) {
+        if (user.isGM) continue;
+
+        const userName = user.name?.toLowerCase() || '';
+        if (userName === searchTerm || (allowPartialMatch && userName.includes(searchTerm))) {
+          players.push({ id: user.id || '', name: user.name || 'Unknown' });
+        }
+      }
+
+      // Character name matching (find owner of character)
+      if (includeCharacterOwners && players.length === 0) {
+        for (const actor of game.actors || []) {
+          if (actor.type !== 'character') continue;
+          
+          const actorName = actor.name?.toLowerCase() || '';
+          if (actorName === searchTerm || (allowPartialMatch && actorName.includes(searchTerm))) {
+            // Find the player owner of this character
+            const owner = game.users?.find(user => 
+              actor.testUserPermission(user, 'OWNER') && !user.isGM
+            );
+            
+            if (owner && !players.some(p => p.id === owner.id)) {
+              players.push({ id: owner.id || '', name: owner.name || 'Unknown' });
+            }
+          }
+        }
+      }
+
+      return players.filter(p => p.id);
+    } catch (error) {
+      console.error(`[${MODULE_ID}] Error finding players:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Find single actor by identifier
+   */
+  async findActor(data: { identifier: string }): Promise<{id: string, name: string} | null> {
+    this.validateFoundryState();
+
+    try {
+      const actor = this.findActorByIdentifier(data.identifier);
+      return actor ? { id: actor.id, name: actor.name } : null;
+    } catch (error) {
+      console.error(`[${MODULE_ID}] Error finding actor:`, error);
+      return null;
+    }
+  }
+
+
+
+
 }

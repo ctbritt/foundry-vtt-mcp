@@ -377,6 +377,79 @@ Hooks.once('init', async () => {
 Hooks.once('ready', async () => {
   try {
     await foundryMCPBridge.onReady();
+    
+    // Register socket listener for roll state management (after game.user is available)
+    console.log(`[${MODULE_ID}] Registering socket listener for user ${game.user?.name} (GM: ${game.user?.isGM})`);
+
+    game.socket?.on('module.foundry-mcp-bridge', async (data) => {
+      console.log(`[${MODULE_ID}] Socket message received by ${game.user?.name}:`, data.type);
+      
+      try {
+        // Handle ChatMessage update requests (GM only)
+        if (data.type === 'requestMessageUpdate' && data.buttonId && data.messageId) {
+          console.log(`[${MODULE_ID}] Received message update request for button ${data.buttonId} from user ${data.fromUserId}`);
+          
+          // Only GM can update ChatMessages for other users
+          if (game.user?.isGM) {
+            try {
+              // Get the data access instance to update the message
+              const queryHandlers = foundryMCPBridge['queryHandlers'] as any;
+              if (queryHandlers && queryHandlers.dataAccess) {
+                await queryHandlers.dataAccess.updateRollButtonMessage(data.buttonId, data.userId, data.rollLabel);
+                console.log(`[${MODULE_ID}] GM updated message ${data.messageId} for button ${data.buttonId} rolled by user ${data.userId}`);
+              }
+            } catch (error) {
+              console.error(`[${MODULE_ID}] GM failed to update message:`, error);
+              // Notify GM about the failure
+              if (game.user?.isGM) {
+                ui.notifications?.error(`Failed to update player roll message: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              }
+            }
+          } else {
+            console.log(`[${MODULE_ID}] Ignoring message update request (not GM)`);
+          }
+          return;
+        }
+
+        // Handle roll state save requests (GM only) - LEGACY
+        if (data.type === 'requestRollStateSave' && data.buttonId && data.rollState) {
+          console.log(`[${MODULE_ID}] Received LEGACY roll state save request for button ${data.buttonId} from user ${data.fromUserId}`);
+          
+          // Only GM can save to world settings
+          if (game.user?.isGM) {
+            try {
+              // Get the data access instance to save the roll state
+              const queryHandlers = foundryMCPBridge['queryHandlers'] as any;
+              if (queryHandlers && queryHandlers.dataAccess) {
+                await queryHandlers.dataAccess.saveRollState(data.buttonId, data.rollState.rolledBy);
+                console.log(`[${MODULE_ID}] GM saved LEGACY roll state for button ${data.buttonId} by user ${data.rollState.rolledByName}`);
+              }
+            } catch (error) {
+              console.error(`[${MODULE_ID}] GM failed to save LEGACY roll state:`, error);
+              // Notify GM about the failure so they can take action
+              if (game.user?.isGM) {
+                ui.notifications?.error(`Failed to save player roll state: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              }
+            }
+          } else {
+            console.log(`[${MODULE_ID}] Ignoring LEGACY roll state save request (not GM)`);
+          }
+          return;
+        }
+
+        // Handle real-time roll state updates - LEGACY (now handled by ChatMessage.update())
+        if (data.type === 'rollStateUpdate' && data.buttonId && data.rollState) {
+          console.log(`[${MODULE_ID}] Received LEGACY roll state update for button ${data.buttonId} from user ${data.fromUserId}`);
+          console.log(`[${MODULE_ID}] Ignoring legacy update - ChatMessage.update() handles synchronization automatically`);
+          // No longer needed - ChatMessage.update() automatically syncs across all clients
+        }
+
+        // Note: rollStateSaved confirmations removed - not needed since rollStateUpdate handles UI sync
+      } catch (error) {
+        console.error(`[${MODULE_ID}] Error handling socket message:`, error);
+      }
+    });
+    
   } catch (error) {
     console.error(`[${MODULE_ID}] Ready failed:`, error);
   }
@@ -404,28 +477,61 @@ Hooks.on('closeSettingsConfig', () => {
   }
 });
 
-// Global hook to attach click handlers to all MCP roll buttons in chat
+// Global hook to handle MCP roll button rendering and state management
 // Using renderChatMessageHTML for Foundry v13 compatibility (renderChatMessage is deprecated)
-Hooks.on('renderChatMessageHTML', (_message: any, html: HTMLElement) => {
+Hooks.on('renderChatMessageHTML', (message: any, html: HTMLElement) => {
   try {
     // Convert HTMLElement to jQuery for compatibility with existing handler code
     const $html = $(html);
     
-    // Only process if message contains MCP roll buttons
-    if ($html.find('.mcp-roll-button').length > 0) {
-      console.log(`[${MODULE_ID}] Attaching handlers to roll buttons for user ${game.user?.name}`);
+    // Check if this message has MCP roll button flags
+    const rollButtons = message.getFlag?.(MODULE_ID, 'rollButtons');
+    
+    if (rollButtons) {
+      console.log(`[${MODULE_ID}] Processing MCP message with roll button flags for user ${game.user?.name}`);
       
-      // Get the data access instance to attach handlers
-      // We need to access through the query handlers to get the data access instance
+      // Get the data access instance
+      const queryHandlers = foundryMCPBridge['queryHandlers'] as any;
+      if (queryHandlers && queryHandlers.dataAccess) {
+        
+        // Check if any buttons in this message are already rolled
+        let hasRolledButtons = false;
+        for (const [_buttonId, buttonData] of Object.entries(rollButtons as any)) {
+          if (buttonData && typeof buttonData === 'object' && (buttonData as any).rolled) {
+            hasRolledButtons = true;
+            break;
+          }
+        }
+        
+        // If message has rolled buttons, the content should already be updated
+        // Just attach any necessary handlers for active buttons
+        if ($html.find('.mcp-roll-button').length > 0) {
+          // Only attach handlers to active (non-rolled) buttons
+          queryHandlers.dataAccess.attachRollButtonHandlers($html);
+        }
+        
+        console.log(`[${MODULE_ID}] Message processed - hasRolledButtons: ${hasRolledButtons}, activeButtons: ${$html.find('.mcp-roll-button').length}`);
+      }
+    } else if ($html.find('.mcp-roll-button').length > 0) {
+      // Legacy message without flags - fall back to old behavior
+      console.log(`[${MODULE_ID}] Processing legacy roll buttons without flags`);
+      
       const queryHandlers = foundryMCPBridge['queryHandlers'] as any;
       if (queryHandlers && queryHandlers.dataAccess) {
         queryHandlers.dataAccess.attachRollButtonHandlers($html);
+        
+        // Check for legacy roll states
+        setTimeout(() => {
+          queryHandlers.dataAccess.ensureButtonStatesForMessage($html);
+        }, 100);
       }
     }
   } catch (error) {
-    console.warn(`[${MODULE_ID}] Error attaching roll button handlers:`, error);
+    console.warn(`[${MODULE_ID}] Error processing roll buttons in chat message:`, error);
   }
 });
+
+// Socket listener will be registered in the 'ready' hook when game.user is available
 
 // Handle world close/reload
 Hooks.on('canvasReady', () => {

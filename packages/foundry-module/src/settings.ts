@@ -197,7 +197,32 @@ export class ModuleSettings {
       default: '',
     });
 
+    // Roll state storage for persistent roll button states
+    game.settings.register(this.moduleId, 'rollStates', {
+      scope: 'world',
+      config: false,
+      type: Object,
+      default: {},
+      onChange: this.onRollStatesChanged.bind(this),
+    });
+
+    // Button to message ID mapping for ChatMessage updates
+    game.settings.register(this.moduleId, 'buttonMessageMap', {
+      scope: 'world',
+      config: false,
+      type: Object,
+      default: {},
+    });
+
     console.log(`[${this.moduleId}] Settings registered`);
+  }
+
+  /**
+   * Handle roll states setting changes - fires on all clients for world-scoped settings
+   */
+  private onRollStatesChanged(newValue: any): void {
+    console.log(`[${this.moduleId}] Legacy roll states changed on client ${game.user?.name}:`, Object.keys(newValue || {}).length + ' roll states');
+    // No action needed - ChatMessage.update() handles state synchronization automatically
   }
 
   /**
