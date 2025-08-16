@@ -112,6 +112,11 @@ function copyMcpServer() {
     const sharedSource = path.join(rootDir, 'shared');
     const mcpServerDest = path.join(config.outputDir, 'foundry-mcp-server');
     
+    console.log('   📁 Root directory:', rootDir);
+    console.log('   📁 MCP server source:', mcpServerSource);
+    console.log('   📁 Shared source:', sharedSource);
+    console.log('   📁 Destination:', mcpServerDest);
+    
     // Create directory structure
     ensureDir(path.join(mcpServerDest, 'packages', 'mcp-server'));
     ensureDir(path.join(mcpServerDest, 'shared'));
@@ -136,21 +141,31 @@ function copyMcpServer() {
         process.exit(1);
     }
     
-    // Install dependencies if needed
-    const packageJsonPath = path.join(mcpServerDest, 'packages', 'mcp-server', 'package.json');
-    const nodeModulesPath = path.join(mcpServerDest, 'packages', 'mcp-server', 'node_modules');
+    // Check if dependencies were already installed in the source (for GitHub Actions)
+    const sourceNodeModules = path.join(mcpServerSource, 'node_modules');
+    const destNodeModules = path.join(mcpServerDest, 'packages', 'mcp-server', 'node_modules');
     
-    if (fs.existsSync(packageJsonPath) && !fs.existsSync(nodeModulesPath)) {
-        console.log('   📦 Installing MCP server dependencies...');
-        try {
-            execSync('npm install --production', {
-                cwd: path.join(mcpServerDest, 'packages', 'mcp-server'),
-                stdio: 'inherit'
-            });
-            console.log('   ✓ Dependencies installed');
-        } catch (error) {
-            console.warn('   ⚠️  Failed to install dependencies automatically');
-            console.warn('      Please run "npm install" in the MCP server directory before packaging');
+    if (fs.existsSync(sourceNodeModules)) {
+        console.log('   📦 Copying pre-installed dependencies...');
+        copyRecursive(sourceNodeModules, destNodeModules);
+        console.log('   ✓ Dependencies copied from source');
+    } else {
+        // Install dependencies if needed
+        const packageJsonPath = path.join(mcpServerDest, 'packages', 'mcp-server', 'package.json');
+        
+        if (fs.existsSync(packageJsonPath)) {
+            console.log('   📦 Installing MCP server dependencies...');
+            try {
+                execSync('npm install --production', {
+                    cwd: path.join(mcpServerDest, 'packages', 'mcp-server'),
+                    stdio: 'inherit'
+                });
+                console.log('   ✓ Dependencies installed');
+            } catch (error) {
+                console.warn('   ⚠️  Failed to install dependencies automatically');
+                console.warn('      Error:', error.message);
+                console.warn('      Please run "npm install" in the MCP server directory before packaging');
+            }
         }
     }
 }
