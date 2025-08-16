@@ -13,6 +13,7 @@ import { ActorCreationTools } from './tools/actor-creation.js';
 import { QuestCreationTools } from './tools/quest-creation.js';
 import { DiceRollTools } from './tools/dice-roll.js';
 import { CampaignManagementTools } from './tools/campaign-management.js';
+import { OwnershipTools } from './tools/ownership.js';
 
 // Utility to log errors and exit gracefully without corrupting stdio
 async function logAndExit(logger: Logger, message: string, error: any): Promise<never> {
@@ -55,6 +56,7 @@ const actorCreationTools = new ActorCreationTools({ foundryClient, logger });
 const questCreationTools = new QuestCreationTools({ foundryClient, logger });
 const diceRollTools = new DiceRollTools({ foundryClient, logger });
 const campaignManagementTools = new CampaignManagementTools(foundryClient, logger);
+const ownershipTools = new OwnershipTools({ foundryClient, logger });
 
 // Create MCP server
 const server = new Server(
@@ -78,6 +80,7 @@ const allTools = [
   ...questCreationTools.getToolDefinitions(),
   ...diceRollTools.getToolDefinitions(),
   ...campaignManagementTools.getToolDefinitions(),
+  ...ownershipTools.getToolDefinitions(),
 ];
 
 // Register tool list handler
@@ -173,6 +176,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         break;
       case 'update-campaign-progress':
         result = await campaignManagementTools.handleUpdateCampaignProgress(args);
+        break;
+
+      // Phase 6: Actor ownership management tools
+      case 'assign-actor-ownership':
+        result = await ownershipTools.handleToolCall('assign-actor-ownership', args);
+        break;
+      case 'remove-actor-ownership':
+        result = await ownershipTools.handleToolCall('remove-actor-ownership', args);
+        break;
+      case 'list-actor-ownership':
+        result = await ownershipTools.handleToolCall('list-actor-ownership', args);
         break;
 
       default:

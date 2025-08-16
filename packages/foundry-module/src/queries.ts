@@ -59,6 +59,22 @@ export class QueryHandlers {
     // Enhanced creature index for campaign analysis
     CONFIG.queries[`${modulePrefix}.getEnhancedCreatureIndex`] = this.handleGetEnhancedCreatureIndex.bind(this);
 
+    // Phase 6: Actor ownership management
+    console.log(`[${MODULE_ID}] Registering ownership query handlers...`);
+    CONFIG.queries[`${modulePrefix}.setActorOwnership`] = this.handleSetActorOwnership.bind(this);
+    CONFIG.queries[`${modulePrefix}.getActorOwnership`] = this.handleGetActorOwnership.bind(this);
+    CONFIG.queries[`${modulePrefix}.getFriendlyNPCs`] = this.handleGetFriendlyNPCs.bind(this);
+    CONFIG.queries[`${modulePrefix}.getPartyCharacters`] = this.handleGetPartyCharacters.bind(this);
+    CONFIG.queries[`${modulePrefix}.getConnectedPlayers`] = this.handleGetConnectedPlayers.bind(this);
+    CONFIG.queries[`${modulePrefix}.findPlayers`] = this.handleFindPlayers.bind(this);
+    CONFIG.queries[`${modulePrefix}.findActor`] = this.handleFindActor.bind(this);
+    
+    console.log(`[${MODULE_ID}] Ownership handlers registered. Key check:`, {
+      setOwnership: typeof CONFIG.queries[`${modulePrefix}.setActorOwnership`],
+      getOwnership: typeof CONFIG.queries[`${modulePrefix}.getActorOwnership`],
+      totalHandlers: Object.keys(CONFIG.queries).filter(k => k.startsWith(modulePrefix)).length
+    });
+
     console.log(`[${MODULE_ID}] Registered ${Object.keys(CONFIG.queries).filter(k => k.startsWith(modulePrefix)).length} query handlers`);
   }
 
@@ -557,4 +573,150 @@ export class QueryHandlers {
       throw new Error(`Failed to get enhanced creature index: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
+
+  /**
+   * Handle set actor ownership request
+   */
+  async handleSetActorOwnership(data: any): Promise<any> {
+    try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
+      this.dataAccess.validateFoundryState();
+
+      if (!data.actorId || !data.userId || data.permission === undefined) {
+        throw new Error('actorId, userId, and permission are required');
+      }
+
+      return await this.dataAccess.setActorOwnership(data);
+    } catch (error) {
+      throw new Error(`Failed to set actor ownership: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Handle get actor ownership request
+   */
+  async handleGetActorOwnership(data: any): Promise<any> {
+    try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
+      this.dataAccess.validateFoundryState();
+
+      return await this.dataAccess.getActorOwnership(data);
+    } catch (error) {
+      throw new Error(`Failed to get actor ownership: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Handle get friendly NPCs request
+   */
+  async handleGetFriendlyNPCs(): Promise<any> {
+    try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
+      this.dataAccess.validateFoundryState();
+
+      return await this.dataAccess.getFriendlyNPCs();
+    } catch (error) {
+      throw new Error(`Failed to get friendly NPCs: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Handle get party characters request
+   */
+  async handleGetPartyCharacters(): Promise<any> {
+    try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
+      this.dataAccess.validateFoundryState();
+
+      return await this.dataAccess.getPartyCharacters();
+    } catch (error) {
+      throw new Error(`Failed to get party characters: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Handle get connected players request
+   */
+  async handleGetConnectedPlayers(): Promise<any> {
+    try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
+      this.dataAccess.validateFoundryState();
+
+      return await this.dataAccess.getConnectedPlayers();
+    } catch (error) {
+      throw new Error(`Failed to get connected players: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Handle find players request
+   */
+  async handleFindPlayers(data: any): Promise<any> {
+    try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
+      this.dataAccess.validateFoundryState();
+
+      if (!data.identifier) {
+        throw new Error('identifier is required');
+      }
+
+      return await this.dataAccess.findPlayers(data);
+    } catch (error) {
+      throw new Error(`Failed to find players: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Handle find actor request
+   */
+  async handleFindActor(data: any): Promise<any> {
+    try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
+      this.dataAccess.validateFoundryState();
+
+      if (!data.identifier) {
+        throw new Error('identifier is required');
+      }
+
+      return await this.dataAccess.findActor(data);
+    } catch (error) {
+      throw new Error(`Failed to find actor: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
 }
