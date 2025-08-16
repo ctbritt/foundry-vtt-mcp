@@ -99,12 +99,7 @@ jobs:
         Write-Host "MD5: $($md5.Hash)"
         
         # Save hashes to file for release notes
-        $hashInfo = @"
-## Package Verification
-**SHA256**: ``$($sha256.Hash)``
-**MD5**: ``$($md5.Hash)``
-**Size**: $([math]::Round((Get-Item $packagePath).Length / 1MB, 1)) MB
-"@
+        $hashInfo = "## Package Verification`n**SHA256**: $($sha256.Hash)`n**MD5**: $($md5.Hash)`n**Size**: $([math]::Round((Get-Item $packagePath).Length / 1MB, 1)) MB"
         
         $hashInfo | Out-File -FilePath "package-hashes.txt" -Encoding UTF8
       shell: powershell
