@@ -298,7 +298,7 @@ function createZipPackage() {
     
     try {
         // Use PowerShell to create ZIP
-        const powershellCommand = `Compress-Archive -Path '${config.outputDir}\\*' -DestinationPath '${zipPath}' -Force`;
+        const powershellCommand = `Compress-Archive -Path '${config.outputDir}' -DestinationPath '${zipPath}' -Force`;
         execSync(`powershell -Command "${powershellCommand}"`, {
             stdio: 'inherit'
         });
