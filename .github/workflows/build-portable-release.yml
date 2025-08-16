@@ -1,0 +1,242 @@
+name: Build Portable Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v0.4.8)'
+        required: true
+        default: 'v0.4.8'
+
+env:
+  NODE_VERSION: '20.12.2'
+  PACKAGE_VERSION: ${{ github.event.inputs.version || github.ref_name }}
+
+jobs:
+  build-portable:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        
+    - name: Install MCP server dependencies
+      run: |
+        cd packages/mcp-server
+        npm install --production
+        
+    - name: Install shared dependencies
+      run: |
+        cd shared
+        npm install --production
+        
+    - name: Build portable package
+      run: |
+        cd installer
+        node build-portable.js
+        
+    - name: Verify package contents
+      run: |
+        $packagePath = "installer/build/FoundryMCPServerPortable-v0.4.8.zip"
+        if (Test-Path $packagePath) {
+          $size = (Get-Item $packagePath).Length / 1MB
+          Write-Host "✅ Package built successfully: $([math]::Round($size, 1)) MB"
+          
+          # Extract and verify contents
+          $tempDir = "installer/build/verify"
+          Expand-Archive -Path $packagePath -DestinationPath $tempDir -Force
+          
+          # Check required files
+          $requiredFiles = @(
+            "FoundryMCPServerPortable/scripts/install.bat",
+            "FoundryMCPServerPortable/scripts/configure-claude.bat", 
+            "FoundryMCPServerPortable/scripts/start-server.bat",
+            "FoundryMCPServerPortable/scripts/test-connection.bat",
+            "FoundryMCPServerPortable/scripts/uninstall.bat",
+            "FoundryMCPServerPortable/portable-node/node.exe",
+            "FoundryMCPServerPortable/foundry-mcp-server/packages/mcp-server/src/index.js",
+            "FoundryMCPServerPortable/README.txt",
+            "FoundryMCPServerPortable/LICENSE.txt"
+          )
+          
+          $missing = @()
+          foreach ($file in $requiredFiles) {
+            $fullPath = Join-Path $tempDir $file
+            if (-not (Test-Path $fullPath)) {
+              $missing += $file
+            }
+          }
+          
+          if ($missing.Count -eq 0) {
+            Write-Host "✅ All required files present"
+          } else {
+            Write-Host "❌ Missing files:"
+            $missing | ForEach-Object { Write-Host "   - $_" }
+            exit 1
+          }
+        } else {
+          Write-Host "❌ Package not found: $packagePath"
+          exit 1
+        }
+      shell: powershell
+      
+    - name: Calculate file hashes
+      run: |
+        $packagePath = "installer/build/FoundryMCPServerPortable-v0.4.8.zip"
+        $sha256 = Get-FileHash -Path $packagePath -Algorithm SHA256
+        $md5 = Get-FileHash -Path $packagePath -Algorithm MD5
+        
+        Write-Host "📊 Package Hashes:"
+        Write-Host "SHA256: $($sha256.Hash)"
+        Write-Host "MD5: $($md5.Hash)"
+        
+        # Save hashes to file for release notes
+        $hashInfo = @"
+## Package Verification
+**SHA256**: ``$($sha256.Hash)``
+**MD5**: ``$($md5.Hash)``
+**Size**: $([math]::Round((Get-Item $packagePath).Length / 1MB, 1)) MB
+"@
+        
+        $hashInfo | Out-File -FilePath "package-hashes.txt" -Encoding UTF8
+      shell: powershell
+      
+    - name: Upload portable package as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: foundry-mcp-server-portable-${{ env.PACKAGE_VERSION }}
+        path: |
+          installer/build/FoundryMCPServerPortable-v0.4.8.zip
+          package-hashes.txt
+        retention-days: 90
+        
+    - name: Create Release (if tag)
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref_name }}
+        release_name: Foundry MCP Server ${{ github.ref_name }}
+        draft: false
+        prerelease: false
+        body: |
+          # Foundry MCP Server Portable ${{ github.ref_name }}
+          
+          🎉 **AI-powered campaign management for Foundry VTT with Claude Desktop!**
+          
+          ## 🚀 Quick Start
+          1. Download `FoundryMCPServerPortable-v0.4.8.zip` below
+          2. Extract and run `scripts\install.bat`  
+          3. Restart Claude Desktop
+          4. Start your AI-powered Foundry VTT campaigns!
+          
+          ## ✨ What's New in ${{ github.ref_name }}
+          - Complete portable package with automatic installation
+          - No administrator rights required
+          - Automatic Claude Desktop configuration
+          - Comprehensive testing and utility scripts
+          - Professional installation and uninstall experience
+          
+          ## 📋 Features
+          - **22 MCP Tools** for comprehensive Foundry VTT integration
+          - **Actor Creation** with natural language processing
+          - **Quest Management** with HTML generation and updates
+          - **Campaign System** with multi-part structure and progress tracking
+          - **Dice Roll Coordination** between Claude and Foundry players
+          - **Actor Ownership** management with bulk operations
+          - **Enhanced Creature Index** for instant monster searches
+          
+          ## 💾 Installation Requirements
+          - Windows 10 or Windows 11
+          - Claude Desktop ([Download here](https://claude.ai/desktop))
+          - Foundry VTT with MCP Bridge module
+          - ~200MB disk space
+          
+          ## 📚 Documentation
+          Complete installation guide and troubleshooting in the package.
+          
+          ## 🔒 Package Verification
+          **SHA256**: [Will be filled by build]
+          **MD5**: [Will be filled by build]
+          
+          ---
+          **Support**: [Issues](https://github.com/adambdooley/foundry-vtt-mcp/issues) | [Documentation](https://github.com/adambdooley/foundry-vtt-mcp)
+          
+    - name: Upload Release Asset (if tag)
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: installer/build/FoundryMCPServerPortable-v0.4.8.zip
+        asset_name: FoundryMCPServerPortable-${{ github.ref_name }}.zip
+        asset_content_type: application/zip
+        
+  test-package:
+    needs: build-portable
+    runs-on: windows-latest
+    
+    steps:
+    - name: Download package artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: foundry-mcp-server-portable-${{ env.PACKAGE_VERSION }}
+        
+    - name: Test package extraction
+      run: |
+        $packagePath = "FoundryMCPServerPortable-v0.4.8.zip"
+        $extractPath = "test-extract"
+        
+        Write-Host "🧪 Testing package extraction..."
+        Expand-Archive -Path $packagePath -DestinationPath $extractPath -Force
+        
+        # Test that install.bat exists and is readable
+        $installScript = Join-Path $extractPath "FoundryMCPServerPortable/scripts/install.bat"
+        if (Test-Path $installScript) {
+          Write-Host "✅ Installation script found and accessible"
+          
+          # Check script for basic structure
+          $content = Get-Content $installScript -Raw
+          if ($content -match "Foundry MCP Server Portable Installer" -and 
+              $content -match "INSTALL_DIR=" -and
+              $content -match "configure-claude.bat") {
+            Write-Host "✅ Installation script structure validated"
+          } else {
+            Write-Host "❌ Installation script structure invalid"
+            exit 1
+          }
+        } else {
+          Write-Host "❌ Installation script not found: $installScript"
+          exit 1
+        }
+        
+        # Test Node.js executable
+        $nodeExe = Join-Path $extractPath "FoundryMCPServerPortable/portable-node/node.exe"
+        if (Test-Path $nodeExe) {
+          Write-Host "✅ Node.js executable found"
+          
+          # Test Node.js can run
+          $version = & $nodeExe --version 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "✅ Node.js executable working: $version"
+          } else {
+            Write-Host "❌ Node.js executable not working"
+            exit 1
+          }
+        } else {
+          Write-Host "❌ Node.js executable not found: $nodeExe"
+          exit 1
+        }
+        
+        Write-Host "🎉 Package test completed successfully!"
+      shell: powershell
