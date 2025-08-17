@@ -2,12 +2,16 @@
 ; Built with NSIS (Nullsoft Scriptable Install System)
 
 ;--------------------------------
-; Include Modern UI
+; Include Modern UI and PowerShell support
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
-!include "StrFunc.nsh"
-${StrLoc}
-${StrRep}
+
+; PowerShell execution macro
+!macro PowerShellExec command
+  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "${command}"'
+!macroend
+
+!define PowerShellExec "!insertmacro PowerShellExec"
 
 ;--------------------------------
 ; General Configuration
@@ -76,70 +80,26 @@ Function OpenInstallGuide
   ExecShell "open" "https://github.com/adambdooley/foundry-vtt-mcp#installation"
 FunctionEnd
 
-Function GetClaudeConfigPath
-  ; Get Claude Desktop config path
-  StrCpy $0 "$APPDATA\Claude\claude_desktop_config.json"
-  IfFileExists $0 found
-  
-  ; Try alternative path
-  StrCpy $0 "$LOCALAPPDATA\Claude\claude_desktop_config.json"
-  IfFileExists $0 found
-  
-  ; Default path if not found
-  StrCpy $0 "$APPDATA\Claude\claude_desktop_config.json"
-  
-  found:
-  Push $0
-FunctionEnd
-
 Function UpdateClaudeConfig
-  ; Get Claude config path
-  Call GetClaudeConfigPath
-  Pop $0
+  ; Configure Claude Desktop using PowerShell script
+  DetailPrint "Configuring Claude Desktop..."
   
-  ; Check if config exists
-  IfFileExists $0 config_exists
+  ; Execute PowerShell script with installation directory as parameter
+  ${PowerShellExec} '& "$INSTDIR\configure-claude.ps1" -InstallDir "$INSTDIR"'
+  Pop $0 ; Get exit code
   
-  ; Create config if it doesn't exist
-  CreateDirectory "$APPDATA\Claude"
-  FileOpen $1 $0 w
-  FileWrite $1 "{$\r$\n"
-  FileWrite $1 '  "mcpServers": {$\r$\n'
-  FileWrite $1 '    "foundry-mcp": {$\r$\n'
-  FileWrite $1 '      "command": "$INSTDIR\node.exe",$\r$\n'
-  FileWrite $1 '      "args": ["$INSTDIR\foundry-mcp-server\packages\mcp-server\dist\index.js"],$\r$\n'
-  FileWrite $1 '      "env": {}$\r$\n'
-  FileWrite $1 '    }$\r$\n'
-  FileWrite $1 '  }$\r$\n'
-  FileWrite $1 "}$\r$\n"
-  FileClose $1
-  Goto config_updated
+  ; Check if PowerShell script succeeded
+  IntCmp $0 0 config_success config_failed config_failed
   
-  config_exists:
-  ; Backup existing config
-  CopyFiles $0 "$0.backup"
-  
-  ; Read existing config
-  FileOpen $1 $0 r
-  FileRead $1 $2
-  FileClose $1
-  
-  ; Simple check if our server is already configured
-  ${StrLoc} $3 $2 "foundry-mcp" ">"
-  StrCmp $3 "" add_server config_updated
-  
-  add_server:
-  ; Add our MCP server to the config
-  ; This is a simplified approach - in a real implementation, you'd use proper JSON parsing
-  ${StrRep} $4 $2 '"mcpServers":{}' '"mcpServers":{"foundry-mcp":{"command":"$INSTDIR\\node.exe","args":["$INSTDIR\\foundry-mcp-server\\packages\\mcp-server\\dist\\index.js"],"env":{}}}'
-  ${StrRep} $5 $4 '{"mcpServers":{' '{"mcpServers":{"foundry-mcp":{"command":"$INSTDIR\\node.exe","args":["$INSTDIR\\foundry-mcp-server\\packages\\mcp-server\\dist\\index.js"],"env":{}},'
-  
-  ; Write updated config
-  FileOpen $1 $0 w
-  FileWrite $1 $5
-  FileClose $1
-  
-  config_updated:
+  config_failed:
+    DetailPrint "Failed to configure Claude Desktop (exit code: $0)"
+    MessageBox MB_ICONEXCLAMATION|MB_OK "Claude Desktop configuration failed.$\r$\n$\r$\nThe Foundry MCP Server was installed successfully, but automatic Claude Desktop configuration failed.$\r$\n$\r$\nYou may need to manually configure Claude Desktop or run the installer as administrator."
+    Goto config_done
+    
+  config_success:
+    DetailPrint "Claude Desktop configured successfully"
+    
+  config_done:
 FunctionEnd
 
 ;--------------------------------
@@ -162,6 +122,9 @@ Section "Foundry MCP Server" SecMain
   ; Install documentation
   File "README.txt"
   File "LICENSE.txt"
+  
+  ; Install PowerShell configuration script
+  File "configure-claude.ps1"
   
   ; Create uninstaller
   WriteUninstaller "$INSTDIR\Uninstall.exe"
@@ -231,6 +194,7 @@ Section "Uninstall"
   RMDir /r "$INSTDIR\foundry-mcp-server"
   Delete "$INSTDIR\README.txt"
   Delete "$INSTDIR\LICENSE.txt"
+  Delete "$INSTDIR\configure-claude.ps1"
   Delete "$INSTDIR\start-server.bat"
   Delete "$INSTDIR\test-connection.bat"
   Delete "$INSTDIR\icon.ico"

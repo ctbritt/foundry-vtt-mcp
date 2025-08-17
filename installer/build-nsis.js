@@ -169,6 +169,17 @@ function copyInstallerFiles() {
         throw new Error('Required icon.ico file missing from nsis directory');
     }
     
+    // Copy PowerShell configuration script
+    const psSource = path.join(config.nsisDir, 'configure-claude.ps1');
+    const psDest = path.join(config.outputDir, 'configure-claude.ps1');
+    if (fs.existsSync(psSource)) {
+        fs.copyFileSync(psSource, psDest);
+        console.log('   ✓ PowerShell script copied');
+    } else {
+        console.error('   ❌ PowerShell script not found:', psSource);
+        throw new Error('Required configure-claude.ps1 file missing from nsis directory');
+    }
+    
     console.log('   ✓ Installer files prepared');
 }
 
