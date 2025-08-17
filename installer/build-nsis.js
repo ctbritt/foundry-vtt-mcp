@@ -199,14 +199,19 @@ function buildInstaller() {
         const beforeFiles = fs.readdirSync(config.outputDir);
         beforeFiles.forEach(file => console.log(`      - ${file}`));
         
+        // Copy NSIS script to output directory so relative paths work
+        const nsisScriptLocal = path.join(config.outputDir, 'foundry-mcp-server.nsi');
+        fs.copyFileSync(nsisScript, nsisScriptLocal);
+        console.log(`   📋 Copied NSIS script to working directory`);
+        
         // Change to output directory so NSIS can find files
         const originalCwd = process.cwd();
         process.chdir(config.outputDir);
         console.log(`   📂 Changed working directory to: ${process.cwd()}`);
         
-        // Run NSIS compiler with verbose output
+        // Run NSIS compiler with verbose output from local script
         console.log(`   🔨 Running NSIS compiler...`);
-        execSync(`makensis /V4 /DVERSION=${version} /DOUTFILE="${outputPath}" "${nsisScript}"`, {
+        execSync(`makensis /V4 /DVERSION=${version} /DOUTFILE="${outputPath}" "foundry-mcp-server.nsi"`, {
             stdio: 'inherit'
         });
         
