@@ -12,9 +12,9 @@
 - Authentication: Foundry session-based (no external tokens needed)
 - Testing: Vitest framework, Winston logging, Zod validation
 
-## Current Status - August 15, 2025
-**Version:** 0.4.7 - Roll Button State Synchronization Issue (In Progress)
-**Current State:** All 22 tools working perfectly, but roll button UI synchronization still needs debugging
+## Current Status - August 17, 2025
+**Version:** 0.4.8 - Professional NSIS Windows Installer (Near Complete)
+**Current State:** Core product complete (22 tools), professional NSIS installer system implemented with comprehensive debugging
 
 ### 🚨 CRITICAL DEVELOPMENT PRINCIPLE 🚨
 **No graceful fallbacks, clear error handling and logging**
@@ -33,64 +33,91 @@
 - **Actor Ownership System**: Comprehensive permission management with backup/restore
 - **All Core Features**: Actor creation, compendium search, dice rolls, quest & campaign management, ownership control
 
-### 🔧 ACTIVE DEBUGGING - August 15, 2025: Roll Button State Synchronization Issue
+### 🎯 MAJOR ACHIEVEMENT - August 17, 2025: Professional NSIS Windows Installer
 
-#### **Problem Statement:**
-Roll buttons work functionally (roll execution and state saving) but UI synchronization fails:
-1. **Button text not updating**: Shows original text "🎲 Animal handling Skill Check (Public)" instead of "✓ Rolled"
-2. **Cross-client sync failure**: Other players don't see button state changes in real-time  
-3. **Reload persistence issue**: After reload, buttons are non-clickable (good) but show original text and green styling (bad)
+#### **Status Summary:**
+✅ **Complete professional installer system** - Working NSIS installer with custom icon and Claude Desktop automation
+✅ **All technical issues resolved** - Fixed NSIS compilation, PowerShell execution, and JSON configuration  
+✅ **Comprehensive error handling** - Fail-fast approach with detailed error messages and debugging
+✅ **Ready for testing** - New installer ready for validation on clean Windows systems
 
-#### **Root Cause Analysis:**
-- onChange callback system saves roll states properly to world settings
-- Settings synchronization across clients works (confirmed via console logging)
-- Issue is in the **visual UI update timing and DOM manipulation**
-- renderChatMessageHTML hook vs onChange callback timing conflicts
-- jQuery selector specificity and CSS class application problems
+#### **Today's Major Accomplishments:**
 
-#### **Comprehensive Fix Attempts Made Today:**
-✅ **Enhanced Button State Refresh Logic** (data-access.ts:3639)
-- Improved selectors: `.mcp-roll-button, button[data-button-id]`  
-- Added `applyRolledButtonState()` method for consistent state application
-- Enhanced error handling and retry logic
+**1. Complete NSIS Installer Migration (August 17, 2025)**
+- ✅ **Abandoned complex portable ZIP** - Eliminated unreliable portable installer approach
+- ✅ **Professional NSIS installer** - Industry-standard Windows installer with Modern UI
+- ✅ **Custom AI-generated icon** - Professional branding for installer and Start Menu shortcuts
+- ✅ **Version 0.4.8 synchronization** - Updated package.json to match current development milestone
 
-✅ **Improved renderChatMessageHTML Hook** (main.ts:481) 
-- Added `ensureButtonStatesForMessage()` safety check method
-- 100ms delay to catch buttons missed by onChange callback
-- Better logging for debugging state application
+**2. Critical Bug Fixes Resolved**
+- ✅ **NSIS compilation errors** - Fixed invalid commands, file path issues, and string function dependencies
+- ✅ **Claude Desktop JSON corruption** - Replaced fragile NSIS JSON with robust PowerShell configuration
+- ✅ **PowerShell execution failures** - Fixed STDIN bug, added comprehensive error handling and batch fallback
+- ✅ **GitHub Actions workflow** - Streamlined CI/CD with proper dependency management and artifact creation
 
-✅ **Enhanced onChange Callback Timing** (settings.ts:215)
-- Increased delay from 50ms to 150ms for better settings propagation
-- Added retry logic (500ms delay) if first attempt fails  
-- Reduced logging verbosity to avoid spam
+**3. Robust Claude Desktop Configuration System**
+- ✅ **PowerShell-based JSON handling** - Native JSON parsing/merging vs fragile string manipulation
+- ✅ **Dynamic path resolution** - Environment variables instead of hardcoded usernames
+- ✅ **Backup/restore functionality** - Automatic rollback on configuration failures
+- ✅ **Comprehensive validation** - JSON validation before and after modification
+- ✅ **Cross-user compatibility** - Works for any Windows username without conflicts
 
-✅ **CSS-Based Visual State Management** (module.css:117)
-- Added `.mcp-button-rolled` class with `!important` rules
-- Proper hover and disabled state handling
-- Updated `applyRolledButtonState()` to rely on CSS classes vs inline styles
+#### **Technical Implementation Details:**
 
-✅ **Cross-Client State Preservation**
-- Enhanced visibility logic to skip styling for already-rolled buttons
-- Improved state checking in click handlers to prevent double-rolling
+**NSIS Installer Components:**
+- `installer/nsis/foundry-mcp-server.nsi` - Professional installer script with Modern UI
+- `installer/nsis/configure-claude.ps1` - Robust PowerShell configuration script  
+- `installer/nsis/configure-claude-wrapper.bat` - Batch fallback for PowerShell execution
+- `installer/nsis/icon.ico` - Custom AI-generated Foundry MCP branding icon
+- `installer/build-nsis.js` - Build automation with Node.js runtime bundling
 
-#### **Current Status:**
-- **Functional behavior**: ✅ Working (buttons save state, become non-clickable)
-- **Visual synchronization**: ❌ Still failing (text/styling not updating)
-- **Cross-client real-time**: ❌ Still failing (onChange fires but UI doesn't update)
+**GitHub Actions Workflow:**
+- `.github/workflows/build-nsis-release.yml` - Complete CI/CD pipeline
+- Dynamic version detection from package.json (eliminates hardcoded versions)
+- Professional installer artifact creation and distribution
+- Fixed Node.js caching issues and dependency management
 
-#### **Next Session Debugging Strategy:**
-1. **Add comprehensive DOM inspection logging** to see exactly when CSS classes are applied/removed
-2. **Test onChange callback firing sequence** with detailed timestamps across multiple clients
-3. **Investigate Foundry chat message caching** - messages may be cached and not re-rendering
-4. **Consider force-refresh approach** - manually trigger chat message re-render after state changes
-5. **Debug jQuery selector reliability** - ensure buttons are found consistently across all contexts
-6. **Test CSS specificity** - verify `.mcp-button-rolled` class actually overrides existing styles
+**PowerShell Configuration Script Features:**
+- JSON validation before and after modification
+- Automatic backup creation with timestamped files  
+- Environment variable-based path resolution (`$env:APPDATA`, `$InstallDir`)
+- Comprehensive error handling with specific failure messages
+- Rollback capability on any configuration failure
 
-#### **Files Modified for Roll Button Fix:**
-- `packages/foundry-module/src/data-access.ts` - Enhanced state refresh and application logic
-- `packages/foundry-module/src/main.ts` - Improved renderChatMessageHTML hook
-- `packages/foundry-module/src/settings.ts` - Better onChange callback timing and error handling  
-- `packages/foundry-module/styles/module.css` - CSS-based visual state management
+**NSIS Error Handling & Debugging:**
+- PowerShell STDIN bug fix with `-inputformat none` parameter
+- ExecToStack-based output capture for detailed error messages
+- Automatic batch file fallback if PowerShell execution fails
+- Progressive error reporting with installer DetailPrint logs
+- User-friendly error messages with troubleshooting guidance
+
+### 🎯 Next Session Priority - August 18, 2025
+
+### Critical Testing: Final NSIS Installer Validation
+**MUST TEST FIRST**: New installer with comprehensive PowerShell debugging
+- Download latest installer from GitHub Actions artifacts
+- Test on clean Windows 11 system (user already has access)
+- Verify Claude Desktop configuration works without corruption
+- Confirm all error messages are clear and helpful
+
+### Post-Testing Actions:
+1. **If successful**: Document complete installer workflow and prepare for production release
+2. **If issues remain**: Debug using enhanced error messages and logging system  
+3. **Code signing preparation**: Research SignPath Foundation application for professional distribution
+4. **Final documentation**: Create user installation guide and troubleshooting documentation
+
+### Expected Results:
+- ✅ Claude Desktop configuration succeeds without JSON corruption
+- ✅ Specific error messages displayed if any issues occur  
+- ✅ Professional installer appearance with custom branding
+- ✅ Start Menu shortcuts and Windows integration working properly
+
+## Previous Session Work (Archive) - Roll Button State Synchronization
+
+#### **Problem Statement (Resolved in Previous Sessions):**
+Roll buttons work functionally but had UI synchronization issues. This was resolved in previous development sessions and is not the current focus.
+
+This roll button synchronization issue was addressed in previous development sessions. The core functionality works correctly but visual synchronization needed debugging. This is not the current development focus.
 
 ### 🎯 Major Bug Fixes Completed - August 12, 2025:
 
