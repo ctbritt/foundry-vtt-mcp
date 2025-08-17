@@ -5,6 +5,9 @@
 ; Include Modern UI
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
+!include "StrFunc.nsh"
+${StrLoc}
+${StrRep}
 
 ;--------------------------------
 ; General Configuration
