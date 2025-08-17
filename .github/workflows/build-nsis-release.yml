@@ -1,0 +1,139 @@
+name: Build NSIS Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - feature/nsis-installer
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v0.4.8)'
+        required: false
+        default: 'v0.4.8'
+
+env:
+  PACKAGE_VERSION: ${{ github.event.inputs.version || github.ref_name || 'v0.4.8' }}
+
+jobs:
+  build-nsis:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.12.2'
+        
+    - name: Install workspace dependencies
+      run: npm ci
+      
+    - name: Install TypeScript build dependencies
+      run: |
+        cd packages/mcp-server
+        npm ci
+        
+    - name: Install shared dependencies
+      run: |
+        cd shared
+        npm ci
+        
+    - name: Build shared types
+      run: |
+        cd shared
+        npm run build
+        
+    - name: Build MCP Server
+      run: |
+        cd packages/mcp-server
+        npm run build
+        
+    - name: Install NSIS
+      run: |
+        choco install nsis -y
+        
+    - name: Verify NSIS installation
+      run: |
+        makensis /VERSION
+        
+    - name: Build NSIS Installer
+      run: |
+        cd installer
+        node build-nsis.js --version $env:PACKAGE_VERSION
+        
+    - name: Verify installer package
+      run: |
+        cd installer/build
+        dir
+        if (Test-Path "FoundryMCPServer-Setup-$env:PACKAGE_VERSION.exe") {
+          Write-Host "✓ NSIS installer found"
+          $size = (Get-Item "FoundryMCPServer-Setup-$env:PACKAGE_VERSION.exe").Length / 1MB
+          Write-Host "📊 Installer size: $([math]::Round($size, 1)) MB"
+        } else {
+          Write-Host "❌ NSIS installer not found"
+          exit 1
+        }
+        
+    - name: Upload installer as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: foundry-mcp-server-installer-${{ env.PACKAGE_VERSION }}
+        path: installer/build/FoundryMCPServer-Setup-${{ env.PACKAGE_VERSION }}.exe
+        retention-days: 30
+        
+    - name: Create Release (on tag)
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref_name }}
+        release_name: Foundry MCP Server ${{ github.ref_name }}
+        body: |
+          ## Foundry MCP Server ${{ github.ref_name }}
+          
+          Professional Windows installer for Foundry MCP Server - AI-powered campaign management for Foundry VTT using Claude Desktop.
+          
+          ### 🚀 Quick Start
+          1. Download `FoundryMCPServer-Setup-${{ github.ref_name }}.exe`
+          2. Run installer (no admin rights required)
+          3. Restart Claude Desktop
+          4. Install MCP Bridge module in Foundry VTT
+          5. Start creating AI-powered campaigns!
+          
+          ### 📋 Features
+          - 22 MCP tools for comprehensive Foundry VTT integration
+          - Actor creation with natural language processing
+          - Quest management with HTML generation and updates
+          - Campaign system with multi-part structure and progress tracking
+          - Dice roll coordination between Claude and Foundry players
+          - Actor ownership management with bulk operations
+          - Enhanced creature index for instant monster searches
+          
+          ### 🔧 Installation
+          - No admin rights required
+          - Automatic Claude Desktop configuration
+          - Portable Node.js runtime included
+          - Professional Windows installer with Start Menu shortcuts
+          
+          For full documentation, visit: https://github.com/adambdooley/foundry-vtt-mcp
+        draft: false
+        prerelease: false
+        
+    - name: Upload Release Asset (on tag)
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: installer/build/FoundryMCPServer-Setup-${{ env.PACKAGE_VERSION }}.exe
+        asset_name: FoundryMCPServer-Setup-${{ env.PACKAGE_VERSION }}.exe
+        asset_content_type: application/octet-stream
