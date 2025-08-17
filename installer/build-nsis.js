@@ -158,11 +158,15 @@ function copyInstallerFiles() {
     fs.copyFileSync(path.join(config.nsisDir, 'LICENSE.txt'), path.join(config.outputDir, 'LICENSE.txt'));
     fs.copyFileSync(path.join(config.nsisDir, 'README.txt'), path.join(config.outputDir, 'README.txt'));
     
-    // Create placeholder icon if it doesn't exist
-    const iconPath = path.join(config.outputDir, 'icon.ico');
-    if (!fs.existsSync(iconPath)) {
-        // Create a simple text file as placeholder (NSIS will handle missing icons gracefully)
-        fs.writeFileSync(iconPath, '');
+    // Copy icon file
+    const iconSource = path.join(config.nsisDir, 'icon.ico');
+    const iconDest = path.join(config.outputDir, 'icon.ico');
+    if (fs.existsSync(iconSource)) {
+        fs.copyFileSync(iconSource, iconDest);
+        console.log('   ✓ Icon file copied');
+    } else {
+        console.error('   ❌ Icon file not found:', iconSource);
+        throw new Error('Required icon.ico file missing from nsis directory');
     }
     
     console.log('   ✓ Installer files prepared');
