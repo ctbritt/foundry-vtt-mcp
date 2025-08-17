@@ -103,7 +103,15 @@ Function UpdateClaudeConfig
   ; Create config if it doesn't exist
   CreateDirectory "$APPDATA\Claude"
   FileOpen $1 $0 w
-  FileWrite $1 '{"mcpServers":{"foundry-mcp":{"command":"$INSTDIR\\node.exe","args":["$INSTDIR\\foundry-mcp-server\\packages\\mcp-server\\dist\\index.js"],"env":{}}}}'
+  FileWrite $1 "{$\r$\n"
+  FileWrite $1 '  "mcpServers": {$\r$\n'
+  FileWrite $1 '    "foundry-mcp": {$\r$\n'
+  FileWrite $1 '      "command": "$INSTDIR\node.exe",$\r$\n'
+  FileWrite $1 '      "args": ["$INSTDIR\foundry-mcp-server\packages\mcp-server\dist\index.js"],$\r$\n'
+  FileWrite $1 '      "env": {}$\r$\n'
+  FileWrite $1 '    }$\r$\n'
+  FileWrite $1 '  }$\r$\n'
+  FileWrite $1 "}$\r$\n"
   FileClose $1
   Goto config_updated
   
