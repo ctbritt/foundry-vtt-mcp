@@ -6,12 +6,19 @@
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
 
-; PowerShell execution macro
-!macro PowerShellExec command
-  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "${command}"'
+; PowerShell execution macro - fixed for NSIS/PowerShell compatibility
+!macro PowerShellExecWithOutput command
+  nsExec::ExecToStack 'powershell.exe -inputformat none -NoProfile -ExecutionPolicy Bypass -Command "${command}"'
 !macroend
 
-!define PowerShellExec "!insertmacro PowerShellExec"
+!define PowerShellExecWithOutput "!insertmacro PowerShellExecWithOutput"
+
+; PowerShell file execution macro
+!macro PowerShellExecFile filepath parameters
+  nsExec::ExecToStack 'powershell.exe -inputformat none -NoProfile -ExecutionPolicy Bypass -File "${filepath}" ${parameters}'
+!macroend
+
+!define PowerShellExecFile "!insertmacro PowerShellExecFile"
 
 ;--------------------------------
 ; General Configuration
@@ -84,21 +91,80 @@ Function UpdateClaudeConfig
   ; Configure Claude Desktop using PowerShell script
   DetailPrint "Configuring Claude Desktop..."
   
-  ; Execute PowerShell script with installation directory as parameter
-  ${PowerShellExec} '& "$INSTDIR\configure-claude.ps1" -InstallDir "$INSTDIR"'
-  Pop $0 ; Get exit code
+  ; First test if PowerShell is available
+  DetailPrint "Testing PowerShell availability..."
+  ${PowerShellExecWithOutput} 'Write-Host "PowerShell OK"'
+  Pop $0 ; Exit code
+  Pop $1 ; Output
   
-  ; Check if PowerShell script succeeded
-  IntCmp $0 0 config_success config_failed config_failed
+  IntCmp $0 0 powershell_ok powershell_failed powershell_failed
   
-  config_failed:
-    DetailPrint "Failed to configure Claude Desktop (exit code: $0)"
-    MessageBox MB_ICONEXCLAMATION|MB_OK "Claude Desktop configuration failed.$\r$\n$\r$\nThe Foundry MCP Server was installed successfully, but automatic Claude Desktop configuration failed.$\r$\n$\r$\nYou may need to manually configure Claude Desktop or run the installer as administrator."
+  powershell_failed:
+    DetailPrint "PowerShell test failed (exit code: $0)"
+    MessageBox MB_ICONEXCLAMATION|MB_OK "PowerShell is not available or accessible.$\r$\n$\r$\nOutput: $1$\r$\n$\r$\nThe Foundry MCP Server was installed successfully, but automatic Claude Desktop configuration failed.$\r$\n$\r$\nPlease configure Claude Desktop manually."
     Goto config_done
     
-  config_success:
-    DetailPrint "Claude Desktop configured successfully"
+  powershell_ok:
+    DetailPrint "PowerShell available, executing configuration script..."
     
+    ; Execute PowerShell script with installation directory as parameter
+    ${PowerShellExecFile} '"$INSTDIR\configure-claude.ps1"' '-InstallDir "$INSTDIR"'
+    Pop $0 ; Exit code
+    Pop $1 ; Output/Error messages
+    
+    ; Check if PowerShell script succeeded
+    IntCmp $0 0 config_success config_failed config_failed
+    
+    config_failed:
+      DetailPrint "Direct PowerShell execution failed (exit code: $0)"
+      DetailPrint "PowerShell output: $1"
+      
+      ; Try batch file fallback method
+      DetailPrint "Attempting batch file fallback method..."
+      nsExec::ExecToStack '"$INSTDIR\configure-claude-wrapper.bat" "$INSTDIR"'
+      Pop $5 ; Exit code from batch
+      Pop $6 ; Output from batch
+      
+      IntCmp $5 0 batch_success batch_failed batch_failed
+      
+      batch_success:
+        DetailPrint "Batch fallback method succeeded"
+        DetailPrint "Batch output: $6"
+        Goto config_success
+        
+      batch_failed:
+        DetailPrint "Batch fallback method also failed (exit code: $5)"
+        DetailPrint "Batch output: $6"
+        
+        ; Extract useful error message from PowerShell output
+        StrLen $2 "$1"
+        IntCmp $2 0 no_output has_output has_output
+        
+        no_output:
+          StrCpy $3 "No error details available"
+          Goto show_error
+          
+        has_output:
+          ; Truncate long output for message box (first 200 chars)
+          StrLen $4 "$1"
+          IntCmp $4 200 show_full truncate_output show_full
+          
+          truncate_output:
+            StrCpy $3 "$1" 200
+            StrCpy $3 "$3..."
+            Goto show_error
+            
+          show_full:
+            StrCpy $3 "$1"
+            
+        show_error:
+          MessageBox MB_ICONEXCLAMATION|MB_OK "Claude Desktop configuration failed.$\r$\n$\r$\nPowerShell Error: $3$\r$\n$\r$\nBatch Error: $6$\r$\n$\r$\nThe Foundry MCP Server was installed successfully, but automatic Claude Desktop configuration failed.$\r$\n$\r$\nPlease configure Claude Desktop manually using the instructions in the Start Menu."
+          Goto config_done
+        
+    config_success:
+      DetailPrint "Claude Desktop configured successfully"
+      DetailPrint "PowerShell output: $1"
+      
   config_done:
 FunctionEnd
 
@@ -123,8 +189,9 @@ Section "Foundry MCP Server" SecMain
   File "README.txt"
   File "LICENSE.txt"
   
-  ; Install PowerShell configuration script
+  ; Install PowerShell configuration script and batch wrapper
   File "configure-claude.ps1"
+  File "configure-claude-wrapper.bat"
   
   ; Create uninstaller
   WriteUninstaller "$INSTDIR\Uninstall.exe"
@@ -195,6 +262,7 @@ Section "Uninstall"
   Delete "$INSTDIR\README.txt"
   Delete "$INSTDIR\LICENSE.txt"
   Delete "$INSTDIR\configure-claude.ps1"
+  Delete "$INSTDIR\configure-claude-wrapper.bat"
   Delete "$INSTDIR\start-server.bat"
   Delete "$INSTDIR\test-connection.bat"
   Delete "$INSTDIR\icon.ico"

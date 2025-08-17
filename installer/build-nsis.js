@@ -180,6 +180,17 @@ function copyInstallerFiles() {
         throw new Error('Required configure-claude.ps1 file missing from nsis directory');
     }
     
+    // Copy batch wrapper script
+    const batSource = path.join(config.nsisDir, 'configure-claude-wrapper.bat');
+    const batDest = path.join(config.outputDir, 'configure-claude-wrapper.bat');
+    if (fs.existsSync(batSource)) {
+        fs.copyFileSync(batSource, batDest);
+        console.log('   ✓ Batch wrapper script copied');
+    } else {
+        console.error('   ❌ Batch wrapper script not found:', batSource);
+        throw new Error('Required configure-claude-wrapper.bat file missing from nsis directory');
+    }
+    
     console.log('   ✓ Installer files prepared');
 }
 
