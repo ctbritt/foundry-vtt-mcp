@@ -42,7 +42,7 @@ jobs:
       run: npm run build --workspace=packages/mcp-server
         
     - name: Setup NSIS
-      uses: joncloud/makensis-action@v4.2
+      uses: joncloud/makensis-action@v4.1
       
     - name: Build NSIS Installer
       run: |
