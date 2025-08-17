@@ -174,6 +174,7 @@ function buildInstaller() {
     try {
         // Check if NSIS is available
         execSync('makensis /VERSION', { stdio: 'pipe' });
+        console.log('   ✓ NSIS found and ready');
     } catch (error) {
         console.error('   ❌ NSIS not found. Please install NSIS from https://nsis.sourceforge.io/');
         console.error('   After installation, add NSIS to your PATH or run this script from NSIS directory.');
@@ -181,21 +182,47 @@ function buildInstaller() {
     }
     
     try {
-        // Run NSIS compiler
+        // Define paths
         const nsisScript = path.join(config.nsisDir, 'foundry-mcp-server.nsi');
         const outputPath = path.join(config.buildDir, `FoundryMCPServer-Setup-${version}.exe`);
         
-        // Change to output directory so NSIS can find files
-        process.chdir(config.outputDir);
+        console.log(`   📁 NSIS script: ${nsisScript}`);
+        console.log(`   📁 Output path: ${outputPath}`);
+        console.log(`   📁 Working directory: ${config.outputDir}`);
         
-        execSync(`makensis /DVERSION=${version} "${nsisScript}"`, {
+        // List files in output directory before NSIS
+        console.log('   📋 Files before NSIS compilation:');
+        const beforeFiles = fs.readdirSync(config.outputDir);
+        beforeFiles.forEach(file => console.log(`      - ${file}`));
+        
+        // Change to output directory so NSIS can find files
+        const originalCwd = process.cwd();
+        process.chdir(config.outputDir);
+        console.log(`   📂 Changed working directory to: ${process.cwd()}`);
+        
+        // Run NSIS compiler with verbose output
+        console.log(`   🔨 Running NSIS compiler...`);
+        execSync(`makensis /V4 /DVERSION=${version} /DOUTFILE="${outputPath}" "${nsisScript}"`, {
             stdio: 'inherit'
         });
         
-        // Move the generated exe to build directory with version in name
-        const generatedExe = path.join(config.outputDir, 'FoundryMCPServer-Setup.exe');
-        if (fs.existsSync(generatedExe)) {
-            fs.renameSync(generatedExe, outputPath);
+        // Restore original working directory
+        process.chdir(originalCwd);
+        
+        // List files in output directory after NSIS
+        console.log('   📋 Files after NSIS compilation:');
+        const afterFiles = fs.readdirSync(config.outputDir);
+        afterFiles.forEach(file => console.log(`      - ${file}`));
+        
+        // Also check build directory
+        console.log('   📋 Files in build directory:');
+        if (fs.existsSync(config.buildDir)) {
+            const buildFiles = fs.readdirSync(config.buildDir);
+            buildFiles.forEach(file => console.log(`      - ${file}`));
+        }
+        
+        // Check if installer was created in expected location
+        if (fs.existsSync(outputPath)) {
             console.log(`   ✓ Installer created: ${outputPath}`);
             
             // Get file size
@@ -205,12 +232,39 @@ function buildInstaller() {
             
             return true;
         } else {
-            console.error('   ❌ Installer not found after build');
+            // Look for the installer in other possible locations
+            console.log('   🔍 Installer not found at expected location, searching...');
+            
+            const possibleLocations = [
+                path.join(config.outputDir, 'FoundryMCPServer-Setup.exe'),
+                path.join(config.buildDir, 'FoundryMCPServer-Setup.exe'),
+                path.join(config.nsisDir, 'FoundryMCPServer-Setup.exe'),
+                path.join(__dirname, 'FoundryMCPServer-Setup.exe')
+            ];
+            
+            for (const location of possibleLocations) {
+                if (fs.existsSync(location)) {
+                    console.log(`   ✓ Found installer at: ${location}`);
+                    fs.renameSync(location, outputPath);
+                    console.log(`   ✓ Moved to expected location: ${outputPath}`);
+                    
+                    const stats = fs.statSync(outputPath);
+                    const fileSizeMB = (stats.size / (1024 * 1024)).toFixed(1);
+                    console.log(`   📊 Installer size: ${fileSizeMB} MB`);
+                    
+                    return true;
+                }
+            }
+            
+            console.error('   ❌ Installer not found in any expected location');
+            console.error('   📋 Searched locations:');
+            possibleLocations.forEach(loc => console.error(`      - ${loc}`));
             return false;
         }
         
     } catch (error) {
         console.error('   ❌ Failed to build installer:', error.message);
+        console.error('   📋 Error details:', error);
         return false;
     }
 }

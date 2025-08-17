@@ -9,7 +9,13 @@
 ;--------------------------------
 ; General Configuration
 Name "Foundry MCP Server"
-OutFile "FoundryMCPServer-Setup.exe"
+
+; Allow output file to be overridden from command line
+!ifndef OUTFILE
+  !define OUTFILE "FoundryMCPServer-Setup.exe"
+!endif
+OutFile "${OUTFILE}"
+
 Unicode True
 
 ; Default installation directory
