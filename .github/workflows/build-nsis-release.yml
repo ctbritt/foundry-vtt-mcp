@@ -35,25 +35,11 @@ jobs:
     - name: Install workspace dependencies
       run: npm ci
       
-    - name: Install TypeScript build dependencies
-      run: |
-        cd packages/mcp-server
-        npm ci
-        
-    - name: Install shared dependencies
-      run: |
-        cd shared
-        npm ci
-        
     - name: Build shared types
-      run: |
-        cd shared
-        npm run build
+      run: npm run build --workspace=shared
         
     - name: Build MCP Server
-      run: |
-        cd packages/mcp-server
-        npm run build
+      run: npm run build --workspace=packages/mcp-server
         
     - name: Install NSIS
       run: |
