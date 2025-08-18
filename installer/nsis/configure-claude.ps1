@@ -48,7 +48,7 @@ try {
     
     # Validate required files exist
     $nodeExe = Join-Path $InstallDir "node.exe"
-    $mcpServer = Join-Path $InstallDir "foundry-mcp-server\packages\mcp-server\dist\index.js"
+    $mcpServer = Join-Path $InstallDir "packages\mcp-server\dist\index.js"
     
     if (-not (Test-Path $nodeExe)) {
         throw "Node.js executable not found: $nodeExe"
