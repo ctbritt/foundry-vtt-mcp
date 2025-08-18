@@ -225,7 +225,7 @@ Section "Foundry MCP Server" SecMain
   FileWrite $0 '@echo off$\r$\n'
   FileWrite $0 'echo Starting Foundry MCP Server...$\r$\n'
   FileWrite $0 'cd /d "$INSTDIR"$\r$\n'
-  FileWrite $0 '"$INSTDIR\node.exe" "$INSTDIR\foundry-mcp-server\packages\mcp-server\dist\index.js"$\r$\n'
+  FileWrite $0 '"$INSTDIR\node.exe" "$INSTDIR\foundry-mcp-server\packages\mcp-server\dist\index.cjs"$\r$\n'
   FileWrite $0 'pause$\r$\n'
   FileClose $0
   
@@ -238,7 +238,7 @@ Section "Foundry MCP Server" SecMain
   FileWrite $0 '"$INSTDIR\node.exe" --version$\r$\n'
   FileWrite $0 'echo.$\r$\n'
   FileWrite $0 'echo Checking MCP Server files...$\r$\n'
-  FileWrite $0 'if exist "$INSTDIR\foundry-mcp-server\packages\mcp-server\dist\index.js" ($\r$\n'
+  FileWrite $0 'if exist "$INSTDIR\foundry-mcp-server\packages\mcp-server\dist\index.cjs" ($\r$\n'
   FileWrite $0 '  echo ✓ MCP Server files found$\r$\n'
   FileWrite $0 ') else ($\r$\n'
   FileWrite $0 '  echo ✗ MCP Server files missing$\r$\n'
@@ -264,8 +264,7 @@ Section "Uninstall"
   ; Remove files and directories (match what installer actually creates)
   Delete "$INSTDIR\node.exe"
   RMDir /r "$INSTDIR\node"
-  RMDir /r "$INSTDIR\packages"
-  RMDir /r "$INSTDIR\shared"
+  RMDir /r "$INSTDIR\foundry-mcp-server"
   Delete "$INSTDIR\README.txt"
   Delete "$INSTDIR\LICENSE.txt"
   Delete "$INSTDIR\configure-claude.ps1"

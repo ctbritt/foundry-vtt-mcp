@@ -12,9 +12,9 @@
 - Authentication: Foundry session-based (no external tokens needed)
 - Testing: Vitest framework, Winston logging, Zod validation
 
-## Current Status - August 17, 2025
-**Version:** 0.4.8 - Professional NSIS Windows Installer (Near Complete)
-**Current State:** Core product complete (22 tools), professional NSIS installer system implemented with comprehensive debugging
+## Current Status - August 18, 2025  
+**Version:** 0.4.8 - NSIS Windows Installer with Bundled MCP Server (Debugging Final Issues)
+**Current State:** Core product complete (22 tools), professional NSIS installer working but MCP server crashing during Claude Desktop initialization
 
 ### 🚨 CRITICAL DEVELOPMENT PRINCIPLE 🚨
 **No graceful fallbacks, clear error handling and logging**
@@ -33,34 +33,33 @@
 - **Actor Ownership System**: Comprehensive permission management with backup/restore
 - **All Core Features**: Actor creation, compendium search, dice rolls, quest & campaign management, ownership control
 
-### 🎯 MAJOR ACHIEVEMENT - August 17, 2025: Professional NSIS Windows Installer
+### 🎯 MAJOR ACHIEVEMENT - August 18, 2025: Bundled MCP Server NSIS Installer
 
 #### **Status Summary:**
-✅ **Complete professional installer system** - Working NSIS installer with custom icon and Claude Desktop automation
-✅ **All technical issues resolved** - Fixed NSIS compilation, PowerShell execution, and JSON configuration  
-✅ **Comprehensive error handling** - Fail-fast approach with detailed error messages and debugging
-✅ **Ready for testing** - New installer ready for validation on clean Windows systems
+✅ **Complete professional installer system** - Working NSIS installer with bundled MCP server (no node_modules needed)
+✅ **Bundling system implemented** - Single 1.1MB MCP server file eliminates massive dependency copying
+✅ **Robust error handling** - Smart Claude Desktop config recovery, comprehensive PowerShell logging
+🔧 **Final debugging phase** - MCP server crashes during Claude Desktop initialization (debug logging added)
 
 #### **Today's Major Accomplishments:**
 
-**1. Complete NSIS Installer Migration (August 17, 2025)**
-- ✅ **Abandoned complex portable ZIP** - Eliminated unreliable portable installer approach
-- ✅ **Professional NSIS installer** - Industry-standard Windows installer with Modern UI
-- ✅ **Custom AI-generated icon** - Professional branding for installer and Start Menu shortcuts
-- ✅ **Version 0.4.8 synchronization** - Updated package.json to match current development milestone
+**1. Bundled MCP Server Implementation (August 18, 2025)**
+- ✅ **Eliminated massive node_modules dependency** - Replaced 100+ MB of dependencies with 1.1MB bundled server
+- ✅ **Fixed NSIS path length limits** - No more 3000+ line errors from deeply nested file paths  
+- ✅ **Professional installer refinement** - Enhanced error messages, proper uninstaller cleanup
+- 🔧 **MCP protocol debugging** - Added comprehensive error logging for initialization crash
 
-**2. Critical Bug Fixes Resolved**
-- ✅ **NSIS compilation errors** - Fixed invalid commands, file path issues, and string function dependencies
-- ✅ **Claude Desktop JSON corruption** - Replaced fragile NSIS JSON with robust PowerShell configuration
-- ✅ **PowerShell execution failures** - Fixed STDIN bug, added comprehensive error handling and batch fallback
-- ✅ **GitHub Actions workflow** - Streamlined CI/CD with proper dependency management and artifact creation
+**2. Comprehensive Error Handling System (August 18, 2025)**
+- ✅ **Smart JSON recovery** - Handles corrupted, empty, and missing Claude Desktop configs
+- ✅ **Professional error messages** - Concise user-friendly dialogs with detailed log file references
+- ✅ **Robust PowerShell validation** - File state detection, automatic backups, rollback capability  
+- ✅ **Fixed installer cleanup** - Uninstaller now properly removes all files and directories
 
-**3. Robust Claude Desktop Configuration System**
-- ✅ **PowerShell-based JSON handling** - Native JSON parsing/merging vs fragile string manipulation
-- ✅ **Dynamic path resolution** - Environment variables instead of hardcoded usernames
-- ✅ **Backup/restore functionality** - Automatic rollback on configuration failures
-- ✅ **Comprehensive validation** - JSON validation before and after modification
-- ✅ **Cross-user compatibility** - Works for any Windows username without conflicts
+**3. Bundling Technical Implementation**
+- ✅ **esbuild integration** - CommonJS bundling with import.meta.url replacement
+- ✅ **Dependency elimination** - All runtime dependencies bundled into single .cjs file
+- ✅ **NSIS simplification** - Single file copy vs recursive directory operations
+- ✅ **GitHub Actions optimization** - Fast builds with proper dependency management
 
 #### **Technical Implementation Details:**
 
