@@ -30,6 +30,43 @@ function Test-JsonValid {
     }
 }
 
+function Get-ConfigFileState {
+    param([string]$ConfigPath)
+    
+    if (-not (Test-Path $ConfigPath)) {
+        return "Missing"
+    }
+    
+    $content = Get-Content $ConfigPath -Raw -ErrorAction SilentlyContinue
+    if (-not $content) {
+        return "Empty"
+    }
+    
+    $content = $content.Trim()
+    
+    # Check for common corruption patterns
+    if ($content -eq "{") {
+        return "PartialOpen"
+    }
+    if ($content -eq "}") {
+        return "PartialClose" 
+    }
+    if ($content.StartsWith("{") -and -not $content.EndsWith("}")) {
+        return "IncompleteJSON"
+    }
+    if (-not $content.StartsWith("{")) {
+        return "InvalidFormat"
+    }
+    
+    # Test if it's valid JSON
+    if (Test-JsonValid $content) {
+        return "ValidJSON"
+    }
+    else {
+        return "CorruptedJSON"
+    }
+}
+
 try {
     Write-LogMessage "=============================================="
     Write-LogMessage "Starting Claude Desktop configuration..."
@@ -72,44 +109,71 @@ try {
         New-Item -ItemType Directory -Path $claudeConfigDir -Force | Out-Null
     }
     
-    # Read existing configuration or create new
+    # Analyze and handle existing configuration
     $config = $null
     $backupPath = $null
     
-    if (Test-Path $configPath) {
-        Write-LogMessage "Reading existing Claude Desktop configuration..."
+    $fileState = Get-ConfigFileState $configPath
+    Write-LogMessage "Claude config file state: $fileState"
+    
+    switch ($fileState) {
+        "Missing" {
+            Write-LogMessage "No existing configuration found, creating new..."
+            $config = [PSCustomObject]@{
+                mcpServers = [PSCustomObject]@{}
+            }
+        }
         
-        # Create backup
-        $backupPath = "$configPath.backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-        Copy-Item $configPath $backupPath
-        Write-LogMessage "Created backup: $backupPath"
-        
-        try {
-            $configContent = Get-Content $configPath -Raw
+        { $_ -in "Empty", "PartialOpen", "PartialClose", "IncompleteJSON", "InvalidFormat", "CorruptedJSON" } {
+            Write-LogMessage "Configuration file is corrupted ($fileState), recreating from scratch..."
             
-            # Validate existing JSON
-            if (-not (Test-JsonValid $configContent)) {
-                throw "Existing Claude Desktop configuration contains invalid JSON"
+            # Create backup of corrupted file for troubleshooting
+            if (Test-Path $configPath) {
+                $backupPath = "$configPath.corrupted-backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+                Copy-Item $configPath $backupPath
+                Write-LogMessage "Backed up corrupted file: $backupPath"
             }
             
-            $config = $configContent | ConvertFrom-Json
-            Write-LogMessage "Existing configuration loaded and validated"
+            # Create fresh configuration
+            $config = [PSCustomObject]@{
+                mcpServers = [PSCustomObject]@{}
+            }
         }
-        catch {
-            throw "Failed to parse existing Claude Desktop configuration: $($_.Exception.Message)"
-        }
-    }
-    else {
-        Write-LogMessage "No existing configuration found, creating new..."
-        $config = [PSCustomObject]@{
-            mcpServers = [PSCustomObject]@{}
+        
+        "ValidJSON" {
+            Write-LogMessage "Reading existing valid configuration..."
+            
+            # Create backup
+            $backupPath = "$configPath.backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+            Copy-Item $configPath $backupPath
+            Write-LogMessage "Created backup: $backupPath"
+            
+            try {
+                $configContent = Get-Content $configPath -Raw
+                $config = $configContent | ConvertFrom-Json
+                Write-LogMessage "Existing configuration loaded successfully"
+                
+                # Log basic structure (not full content to avoid huge logs)
+                $propCount = $config.PSObject.Properties.Name.Count
+                Write-LogMessage "Configuration has $propCount top-level properties"
+            }
+            catch {
+                Write-LogMessage "Failed to parse supposedly valid JSON, recreating..." "ERROR"
+                $config = [PSCustomObject]@{
+                    mcpServers = [PSCustomObject]@{}
+                }
+            }
         }
     }
     
-    # Ensure mcpServers section exists
-    if (-not $config.PSObject.Properties.Name -contains "mcpServers") {
+    # Ensure mcpServers section exists and is valid
+    if (-not $config.PSObject.Properties.Name -contains "mcpServers" -or $null -eq $config.mcpServers) {
         Write-LogMessage "Adding mcpServers section to configuration..."
-        $config | Add-Member -Type NoteProperty -Name "mcpServers" -Value ([PSCustomObject]@{})
+        if ($config.PSObject.Properties.Name -contains "mcpServers") {
+            $config.mcpServers = [PSCustomObject]@{}
+        } else {
+            $config | Add-Member -Type NoteProperty -Name "mcpServers" -Value ([PSCustomObject]@{})
+        }
     }
     
     # Configure Foundry MCP Server
@@ -176,7 +240,8 @@ try {
     exit 0
 }
 catch {
-    Write-LogMessage "Configuration failed: $($_.Exception.Message)" "ERROR"
+    $errorMsg = $_.Exception.Message
+    Write-LogMessage "Configuration failed: $errorMsg" "ERROR"
     Write-LogMessage "Full exception details: $($_.Exception | ConvertTo-Json -Depth 3)" "ERROR"
     Write-LogMessage "Stack trace: $($_.ScriptStackTrace)" "ERROR"
     Write-LogMessage "The Claude Desktop configuration was not modified" "ERROR"
@@ -184,7 +249,17 @@ catch {
     Write-LogMessage "For detailed error information, check: $LogFile" "ERROR"
     Write-LogMessage "=============================================="
     
-    # Also output to stderr for NSIS to capture
-    Write-Error "Configuration failed: $($_.Exception.Message). Check log: $LogFile"
+    # Provide concise error message for NSIS/user display
+    $shortError = switch -Wildcard ($errorMsg) {
+        "*MCP server not found*" { "MCP server files missing from installation" }
+        "*Node.js executable not found*" { "Node.js runtime missing from installation" }
+        "*Installation directory does not exist*" { "Installation directory not found" }
+        "*Cannot bind argument*" { "Claude Desktop configuration format error" }
+        "*ConvertFrom-Json*" { "Claude Desktop configuration file corrupted" }
+        "*Access*denied*" { "Permission denied accessing Claude Desktop configuration" }
+        Default { "Claude Desktop configuration failed" }
+    }
+    
+    Write-Error "$shortError. Details in log: $LogFile"
     exit 1
 }
