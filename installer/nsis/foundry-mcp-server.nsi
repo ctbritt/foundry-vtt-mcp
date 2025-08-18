@@ -108,7 +108,7 @@ Function UpdateClaudeConfig
     DetailPrint "PowerShell available, executing configuration script..."
     
     ; Execute PowerShell script with installation directory as parameter
-    ${PowerShellExecFile} '"$INSTDIR\configure-claude.ps1"' '-InstallDir "$INSTDIR"'
+    ${PowerShellExecFile} "$INSTDIR\configure-claude.ps1" "-InstallDir `"$INSTDIR`""
     Pop $0 ; Exit code
     Pop $1 ; Output/Error messages
     
@@ -158,7 +158,7 @@ Function UpdateClaudeConfig
             StrCpy $3 "$1"
             
         show_error:
-          MessageBox MB_ICONEXCLAMATION|MB_OK "Claude Desktop configuration failed.$\r$\n$\r$\nPowerShell Error: $3$\r$\n$\r$\nBatch Error: $6$\r$\n$\r$\nThe Foundry MCP Server was installed successfully, but automatic Claude Desktop configuration failed.$\r$\n$\r$\nPlease configure Claude Desktop manually using the instructions in the Start Menu."
+          MessageBox MB_ICONEXCLAMATION|MB_OK "Claude Desktop configuration failed.$\r$\n$\r$\nPowerShell Error: $3$\r$\n$\r$\nBatch Error: $6$\r$\n$\r$\nThe Foundry MCP Server was installed successfully, but automatic Claude Desktop configuration failed.$\r$\n$\r$\nFor detailed error information, check the log file at:$\r$\n%TEMP%\foundry-mcp-claude-config.log$\r$\n$\r$\nPlease configure Claude Desktop manually using the instructions in the Start Menu."
           Goto config_done
         
     config_success:

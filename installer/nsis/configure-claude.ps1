@@ -8,10 +8,15 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Enhanced logging with file output
+$LogFile = Join-Path $env:TEMP "foundry-mcp-claude-config.log"
+
 function Write-LogMessage {
     param([string]$Message, [string]$Level = "INFO")
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$timestamp] [$Level] $Message"
+    $logEntry = "[$timestamp] [$Level] $Message"
+    Write-Host $logEntry
+    Add-Content -Path $LogFile -Value $logEntry -ErrorAction SilentlyContinue
 }
 
 function Test-JsonValid {
@@ -26,8 +31,15 @@ function Test-JsonValid {
 }
 
 try {
+    Write-LogMessage "=============================================="
     Write-LogMessage "Starting Claude Desktop configuration..."
+    Write-LogMessage "=============================================="
+    Write-LogMessage "Log file location: $LogFile"
+    Write-LogMessage "PowerShell version: $($PSVersionTable.PSVersion)"
+    Write-LogMessage "Current user: $($env:USERNAME)"
     Write-LogMessage "Install directory: $InstallDir"
+    Write-LogMessage "APPDATA: $($env:APPDATA)"
+    Write-LogMessage "Script parameters: $($PSBoundParameters | ConvertTo-Json)"
     
     # Validate installation directory exists
     if (-not (Test-Path $InstallDir)) {
@@ -165,6 +177,14 @@ try {
 }
 catch {
     Write-LogMessage "❌ Configuration failed: $($_.Exception.Message)" "ERROR"
+    Write-LogMessage "Full exception details: $($_.Exception | ConvertTo-Json -Depth 3)" "ERROR"
+    Write-LogMessage "Stack trace: $($_.ScriptStackTrace)" "ERROR"
     Write-LogMessage "The Claude Desktop configuration was not modified" "ERROR"
+    Write-LogMessage "=============================================="
+    Write-LogMessage "For detailed error information, check: $LogFile" "ERROR"
+    Write-LogMessage "=============================================="
+    
+    # Also output to stderr for NSIS to capture
+    Write-Error "Configuration failed: $($_.Exception.Message). Check log: $LogFile"
     exit 1
 }
