@@ -195,9 +195,38 @@ try {
         $config.mcpServers | Add-Member -Type NoteProperty -Name "foundry-mcp" -Value $foundryMcpConfig
     }
     
-    # Convert to JSON with proper formatting
+    # Convert to JSON with proper formatting for Claude Desktop
     Write-LogMessage "Generating new configuration JSON..."
-    $newConfigJson = $config | ConvertTo-Json -Depth 10
+    
+    # Create JSON manually for better control over formatting
+    $mcpServersJson = @()
+    foreach ($serverName in $config.mcpServers.PSObject.Properties.Name) {
+        $server = $config.mcpServers.$serverName
+        $argsJson = ($server.args | ForEach-Object { "`"$($_ -replace '\\', '\\\\')`"" }) -join ', '
+        $envJson = if ($server.env.PSObject.Properties.Name.Count -gt 0) {
+            $envProps = $server.env.PSObject.Properties | ForEach-Object { "`"$($_.Name)`": `"$($_.Value)`"" }
+            "{ $($envProps -join ', ') }"
+        } else {
+            "{}"
+        }
+        
+        $serverJson = @"
+    "$serverName": {
+      "command": "$($server.command -replace '\\', '\\\\')",
+      "args": [$argsJson],
+      "env": $envJson
+    }
+"@
+        $mcpServersJson += $serverJson
+    }
+    
+    $newConfigJson = @"
+{
+  "mcpServers": {
+$($mcpServersJson -join ",`r`n")
+  }
+}
+"@
     
     # Validate generated JSON
     if (-not (Test-JsonValid $newConfigJson)) {
@@ -208,7 +237,8 @@ try {
     
     # Write new configuration
     try {
-        $newConfigJson | Set-Content $configPath -Encoding UTF8
+        # Use UTF8 without BOM for better compatibility
+        [System.IO.File]::WriteAllText($configPath, $newConfigJson, [System.Text.UTF8Encoding]::new($false))
         Write-LogMessage "Claude Desktop configuration updated successfully"
     }
     catch {

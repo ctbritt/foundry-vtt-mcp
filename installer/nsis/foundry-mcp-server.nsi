@@ -101,7 +101,7 @@ Function UpdateClaudeConfig
   
   powershell_failed:
     DetailPrint "PowerShell test failed (exit code: $0)"
-    MessageBox MB_ICONEXCLAMATION|MB_OK "PowerShell Not Available$\r$\n$\r$\nFoundry MCP Server installed successfully, but PowerShell is required for automatic Claude Desktop configuration.$\r$\n$\r$\n• See manual setup guide in Start Menu$\r$\n• Configure Claude Desktop manually$\r$\n• Contact support if PowerShell should be available"
+    MessageBox MB_ICONEXCLAMATION|MB_OK "PowerShell Not Available$\r$\n$\r$\nFoundry MCP Server installed successfully, but PowerShell is required for automatic Claude Desktop configuration.$\r$\n$\r$\n- See manual setup guide in Start Menu$\r$\n- Configure Claude Desktop manually$\r$\n- Contact support if PowerShell should be available"
     Goto config_done
     
   powershell_ok:
@@ -164,12 +164,12 @@ Function UpdateClaudeConfig
           StrCpy $7 "$7..."
           
           short_error:
-          MessageBox MB_ICONEXCLAMATION|MB_OK "Claude Desktop Configuration Failed$\r$\n$\r$\nError: $7$\r$\n$\r$\nFoundry MCP Server installed successfully, but Claude Desktop configuration could not be completed automatically.$\r$\n$\r$\n• Check detailed error log: %TEMP%\foundry-mcp-claude-config.log$\r$\n• See manual setup guide in Start Menu$\r$\n• Restart Claude Desktop after manual configuration"
+          MessageBox MB_ICONEXCLAMATION|MB_OK "Claude Desktop Configuration Failed$\r$\n$\r$\nError: $7$\r$\n$\r$\nFoundry MCP Server installed successfully, but Claude Desktop configuration could not be completed automatically.$\r$\n$\r$\n- Check detailed error log: %TEMP%\foundry-mcp-claude-config.log$\r$\n- See manual setup guide in Start Menu$\r$\n- Restart Claude Desktop after manual configuration"
           Goto config_done
         
     config_success:
       DetailPrint "Claude Desktop configured successfully"
-      MessageBox MB_ICONINFORMATION|MB_OK "Setup Complete!$\r$\n$\r$\nFoundry MCP Server has been installed and Claude Desktop has been configured.$\r$\n$\r$\n• Restart Claude Desktop to activate the MCP connection$\r$\n• Install the MCP Bridge module in Foundry VTT$\r$\n• See Start Menu for setup guides and tools"
+      MessageBox MB_ICONINFORMATION|MB_OK "Setup Complete!$\r$\n$\r$\nFoundry MCP Server has been installed and Claude Desktop has been configured.$\r$\n$\r$\n- Restart Claude Desktop to activate the MCP connection$\r$\n- Install the MCP Bridge module in Foundry VTT$\r$\n- See Start Menu for setup guides and tools"
       
   config_done:
 FunctionEnd
