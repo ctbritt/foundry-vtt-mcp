@@ -198,35 +198,8 @@ try {
     # Convert to JSON with proper formatting for Claude Desktop
     Write-LogMessage "Generating new configuration JSON..."
     
-    # Create JSON manually for better control over formatting
-    $mcpServersJson = @()
-    foreach ($serverName in $config.mcpServers.PSObject.Properties.Name) {
-        $server = $config.mcpServers.$serverName
-        $argsJson = ($server.args | ForEach-Object { "`"$($_ -replace '\\', '\\\\')`"" }) -join ', '
-        $envJson = if ($server.env.PSObject.Properties.Name.Count -gt 0) {
-            $envProps = $server.env.PSObject.Properties | ForEach-Object { "`"$($_.Name)`": `"$($_.Value)`"" }
-            "{ $($envProps -join ', ') }"
-        } else {
-            "{}"
-        }
-        
-        $serverJson = @"
-    "$serverName": {
-      "command": "$($server.command -replace '\\', '\\\\')",
-      "args": [$argsJson],
-      "env": $envJson
-    }
-"@
-        $mcpServersJson += $serverJson
-    }
-    
-    $newConfigJson = @"
-{
-  "mcpServers": {
-$($mcpServersJson -join ",`r`n")
-  }
-}
-"@
+    # Use PowerShell's ConvertTo-Json - it handles escaping correctly
+    $newConfigJson = $config | ConvertTo-Json -Depth 10
     
     # Validate generated JSON
     if (-not (Test-JsonValid $newConfigJson)) {
