@@ -29,6 +29,7 @@ console.log('🚀 Building Foundry MCP Server NSIS Installer\n');
 console.log(`📦 Version: ${version}\n`);
 
 // Configuration
+const rootDir = path.join(__dirname, '..');
 const config = {
     nodeVersion: 'v20.12.2',
     nodeArchive: 'node-v20.12.2-win-x64.zip',
@@ -136,11 +137,23 @@ function copyMcpServerFiles() {
     copyRecursive(path.join(mcpServerSource, 'dist'), path.join(mcpServerDest, 'packages', 'mcp-server', 'dist'));
     fs.copyFileSync(path.join(mcpServerSource, 'package.json'), path.join(mcpServerDest, 'packages', 'mcp-server', 'package.json'));
     
-    // Copy node_modules if they exist (from CI build)
-    const sourceNodeModules = path.join(mcpServerSource, 'node_modules');
+    // Copy node_modules if they exist (from CI build or local development)
+    let sourceNodeModules = path.join(mcpServerSource, 'node_modules');
+    if (!fs.existsSync(sourceNodeModules)) {
+        // Check root node_modules (workspace setup)
+        sourceNodeModules = path.join(rootDir, 'node_modules');
+    }
+    
     if (fs.existsSync(sourceNodeModules)) {
         console.log('   📦 Copying dependencies...');
+        console.log(`   📁 Source: ${sourceNodeModules}`);
         copyRecursive(sourceNodeModules, path.join(mcpServerDest, 'packages', 'mcp-server', 'node_modules'));
+    } else {
+        console.warn('   ⚠️  No node_modules found in either location:');
+        console.warn(`      - ${path.join(mcpServerSource, 'node_modules')}`);
+        console.warn(`      - ${path.join(rootDir, 'node_modules')}`);
+        console.warn('   ⚠️  MCP server will not work without dependencies!');
+        console.warn('   💡 Run "npm ci" in the root directory before building installer');
     }
     
     // Copy shared files (only dist needed for production)
