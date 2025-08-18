@@ -58,7 +58,7 @@ try {
         throw "MCP server not found: $mcpServer"
     }
     
-    Write-LogMessage "✓ Installation files validated"
+    Write-LogMessage "Installation files validated"
     
     # Determine Claude Desktop config path
     $claudeConfigDir = Join-Path $env:APPDATA "Claude"
@@ -93,7 +93,7 @@ try {
             }
             
             $config = $configContent | ConvertFrom-Json
-            Write-LogMessage "✓ Existing configuration loaded and validated"
+            Write-LogMessage "Existing configuration loaded and validated"
         }
         catch {
             throw "Failed to parse existing Claude Desktop configuration: $($_.Exception.Message)"
@@ -140,12 +140,12 @@ try {
         throw "Generated configuration JSON is invalid"
     }
     
-    Write-LogMessage "✓ Generated configuration validated"
+    Write-LogMessage "Generated configuration validated"
     
     # Write new configuration
     try {
         $newConfigJson | Set-Content $configPath -Encoding UTF8
-        Write-LogMessage "✓ Claude Desktop configuration updated successfully"
+        Write-LogMessage "Claude Desktop configuration updated successfully"
     }
     catch {
         # Restore backup if write failed
@@ -159,7 +159,7 @@ try {
     # Verify written file is valid
     try {
         $verification = Get-Content $configPath -Raw | ConvertFrom-Json
-        Write-LogMessage "✓ Written configuration verified"
+        Write-LogMessage "Written configuration verified"
     }
     catch {
         # Restore backup if verification failed
@@ -176,7 +176,7 @@ try {
     exit 0
 }
 catch {
-    Write-LogMessage "❌ Configuration failed: $($_.Exception.Message)" "ERROR"
+    Write-LogMessage "Configuration failed: $($_.Exception.Message)" "ERROR"
     Write-LogMessage "Full exception details: $($_.Exception | ConvertTo-Json -Depth 3)" "ERROR"
     Write-LogMessage "Stack trace: $($_.ScriptStackTrace)" "ERROR"
     Write-LogMessage "The Claude Desktop configuration was not modified" "ERROR"
