@@ -108,7 +108,7 @@ Function UpdateClaudeConfig
     DetailPrint "PowerShell available, executing configuration script..."
     
     ; Execute PowerShell script with installation directory as parameter
-    ${PowerShellExecFile} "$INSTDIR\configure-claude.ps1" "-InstallDir `"$INSTDIR`""
+    ${PowerShellExecFile} "$INSTDIR\configure-claude.ps1" '"-InstallDir \"$INSTDIR\""'
     Pop $0 ; Exit code
     Pop $1 ; Output/Error messages
     
