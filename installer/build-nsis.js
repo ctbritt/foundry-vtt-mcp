@@ -135,7 +135,7 @@ function copyMcpServerFiles() {
     // Copy bundled MCP server (single file with all dependencies included)
     console.log('   📦 Copying bundled MCP server...');
     ensureDir(path.join(mcpServerDest, 'packages', 'mcp-server', 'dist'));
-    fs.copyFileSync(builtBundlePath, path.join(mcpServerDest, 'packages', 'mcp-server', 'dist', 'index.js'));
+    fs.copyFileSync(builtBundlePath, path.join(mcpServerDest, 'packages', 'mcp-server', 'dist', 'index.cjs'));
     fs.copyFileSync(path.join(mcpServerSource, 'package.json'), path.join(mcpServerDest, 'packages', 'mcp-server', 'package.json'));
     console.log('   ✅ Bundled MCP server copied (no node_modules needed!)');
     
