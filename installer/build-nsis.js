@@ -121,10 +121,10 @@ function copyMcpServerFiles() {
     const sharedSource = path.join(rootDir, 'shared');
     const mcpServerDest = path.join(config.outputDir, 'foundry-mcp-server');
     
-    // Ensure MCP server was built
-    const builtIndexPath = path.join(mcpServerSource, 'dist', 'index.js');
-    if (!fs.existsSync(builtIndexPath)) {
-        console.error('   ❌ MCP server not built. Run "npm run build:server" first.');
+    // Ensure MCP server was built and bundled
+    const builtBundlePath = path.join(mcpServerSource, 'dist', 'index.bundle.cjs');
+    if (!fs.existsSync(builtBundlePath)) {
+        console.error('   ❌ MCP server bundle not found. Run "npm run build:bundle --workspace=packages/mcp-server" first.');
         process.exit(1);
     }
     
@@ -132,29 +132,12 @@ function copyMcpServerFiles() {
     ensureDir(path.join(mcpServerDest, 'packages', 'mcp-server'));
     ensureDir(path.join(mcpServerDest, 'shared'));
     
-    // Copy MCP server (only dist and package.json needed for production)
-    console.log('   📁 Copying MCP server dist files...');
-    copyRecursive(path.join(mcpServerSource, 'dist'), path.join(mcpServerDest, 'packages', 'mcp-server', 'dist'));
+    // Copy bundled MCP server (single file with all dependencies included)
+    console.log('   📦 Copying bundled MCP server...');
+    ensureDir(path.join(mcpServerDest, 'packages', 'mcp-server', 'dist'));
+    fs.copyFileSync(builtBundlePath, path.join(mcpServerDest, 'packages', 'mcp-server', 'dist', 'index.js'));
     fs.copyFileSync(path.join(mcpServerSource, 'package.json'), path.join(mcpServerDest, 'packages', 'mcp-server', 'package.json'));
-    
-    // Copy node_modules if they exist (from CI build or local development)
-    let sourceNodeModules = path.join(mcpServerSource, 'node_modules');
-    if (!fs.existsSync(sourceNodeModules)) {
-        // Check root node_modules (workspace setup)
-        sourceNodeModules = path.join(rootDir, 'node_modules');
-    }
-    
-    if (fs.existsSync(sourceNodeModules)) {
-        console.log('   📦 Copying dependencies...');
-        console.log(`   📁 Source: ${sourceNodeModules}`);
-        copyRecursive(sourceNodeModules, path.join(mcpServerDest, 'packages', 'mcp-server', 'node_modules'));
-    } else {
-        console.warn('   ⚠️  No node_modules found in either location:');
-        console.warn(`      - ${path.join(mcpServerSource, 'node_modules')}`);
-        console.warn(`      - ${path.join(rootDir, 'node_modules')}`);
-        console.warn('   ⚠️  MCP server will not work without dependencies!');
-        console.warn('   💡 Run "npm ci" in the root directory before building installer');
-    }
+    console.log('   ✅ Bundled MCP server copied (no node_modules needed!)');
     
     // Copy shared files (only dist needed for production)
     console.log('   📁 Copying shared files...');

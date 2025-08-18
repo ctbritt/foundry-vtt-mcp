@@ -98,8 +98,8 @@ jobs:
     - name: Build shared types
       run: npm run build --workspace=shared
         
-    - name: Build MCP Server
-      run: npm run build --workspace=packages/mcp-server
+    - name: Build MCP Server (Bundled)
+      run: npm run build:bundle --workspace=packages/mcp-server
         
     - name: Setup NSIS
       uses: joncloud/makensis-action@v4.1
