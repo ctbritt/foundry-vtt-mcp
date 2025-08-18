@@ -261,10 +261,11 @@ SectionEnd
 ; Uninstaller Section
 Section "Uninstall"
   
-  ; Remove files
+  ; Remove files and directories (match what installer actually creates)
   Delete "$INSTDIR\node.exe"
   RMDir /r "$INSTDIR\node"
-  RMDir /r "$INSTDIR\foundry-mcp-server"
+  RMDir /r "$INSTDIR\packages"
+  RMDir /r "$INSTDIR\shared"
   Delete "$INSTDIR\README.txt"
   Delete "$INSTDIR\LICENSE.txt"
   Delete "$INSTDIR\configure-claude.ps1"
@@ -273,6 +274,9 @@ Section "Uninstall"
   Delete "$INSTDIR\test-connection.bat"
   Delete "$INSTDIR\icon.ico"
   Delete "$INSTDIR\Uninstall.exe"
+  
+  ; Remove any remaining files
+  Delete "$INSTDIR\*.*"
   
   ; Remove Start Menu shortcuts
   RMDir /r "$SMPROGRAMS\Foundry MCP Server"
