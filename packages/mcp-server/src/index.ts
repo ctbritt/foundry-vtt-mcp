@@ -232,13 +232,19 @@ async function main(): Promise<void> {
   try {
     // Start MCP server first (don't require Foundry connection)
     logger.info('Starting MCP server...');
-    const transport = new StdioServerTransport();
+    console.error('DEBUG: About to create StdioServerTransport');
     
+    const transport = new StdioServerTransport();
+    console.error('DEBUG: StdioServerTransport created successfully');
+    
+    console.error('DEBUG: About to connect server to transport');
     await server.connect(transport);
+    console.error('DEBUG: Server connected to transport successfully');
     
     logger.info('MCP server started successfully', {
       toolsAvailable: allTools.length,
     });
+    console.error('DEBUG: MCP server startup completed');
 
     // Log available tools count only for debugging
     logger.debug(`Available tools: ${allTools.length} registered`);
@@ -249,6 +255,9 @@ async function main(): Promise<void> {
     });
 
   } catch (error) {
+    console.error('DEBUG: Error caught in main():', error);
+    console.error('DEBUG: Error message:', error instanceof Error ? error.message : String(error));
+    console.error('DEBUG: Error stack:', error instanceof Error ? error.stack : 'No stack trace');
     await logAndExit(logger, 'Failed to start server', error);
   }
 }
