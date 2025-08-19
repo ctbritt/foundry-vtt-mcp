@@ -13,8 +13,8 @@
 - Testing: Vitest framework, Winston logging, Zod validation
 
 ## Current Status - August 18, 2025  
-**Version:** 0.4.8 - NSIS Windows Installer with Bundled MCP Server (Debugging Final Issues)
-**Current State:** Core product complete (22 tools), professional NSIS installer working but MCP server crashing during Claude Desktop initialization
+**Version:** 0.4.8 - NSIS Windows Installer with Critical Path Fixes (Ready for Final Testing)
+**Current State:** Core product complete (22 tools), professional NSIS installer with resolved file path issues, ready for comprehensive testing on clean Windows system
 
 ### 🚨 CRITICAL DEVELOPMENT PRINCIPLE 🚨
 **No graceful fallbacks, clear error handling and logging**
@@ -33,21 +33,27 @@
 - **Actor Ownership System**: Comprehensive permission management with backup/restore
 - **All Core Features**: Actor creation, compendium search, dice rolls, quest & campaign management, ownership control
 
-### 🎯 MAJOR ACHIEVEMENT - August 18, 2025: Bundled MCP Server NSIS Installer
+### 🎯 MAJOR ACHIEVEMENT - August 18, 2025: Critical NSIS Installer Path Fixes
 
 #### **Status Summary:**
 ✅ **Complete professional installer system** - Working NSIS installer with bundled MCP server (no node_modules needed)
 ✅ **Bundling system implemented** - Single 1.1MB MCP server file eliminates massive dependency copying
-✅ **Robust error handling** - Smart Claude Desktop config recovery, comprehensive PowerShell logging
-🔧 **Final debugging phase** - MCP server crashes during Claude Desktop initialization (debug logging added)
+✅ **Critical path issues resolved** - Fixed file path mismatches between NSIS and PowerShell configuration
+✅ **Ready for final testing** - New installer build ready for validation on clean Windows system
 
 #### **Today's Major Accomplishments:**
 
-**1. Bundled MCP Server Implementation (August 18, 2025)**
+**1. Critical File Path Debugging & Resolution (August 18, 2025)**
+- ✅ **Root cause identified** - NSIS installer and PowerShell script had mismatched file paths
+- ✅ **PowerShell script corrected** - Fixed path from `packages\mcp-server\dist\index.cjs` to `foundry-mcp-server\packages\mcp-server\dist\index.cjs`
+- ✅ **NSIS batch scripts updated** - Changed references from `index.js` to `index.cjs` (bundled file)
+- ✅ **Uninstaller path fixes** - Corrected to remove actual `foundry-mcp-server` directory instead of non-existent paths
+- ✅ **Version synchronization** - Updated package.json to v0.4.8 matching NSIS installer version
+
+**2. Bundled MCP Server Implementation (August 18, 2025)**
 - ✅ **Eliminated massive node_modules dependency** - Replaced 100+ MB of dependencies with 1.1MB bundled server
 - ✅ **Fixed NSIS path length limits** - No more 3000+ line errors from deeply nested file paths  
 - ✅ **Professional installer refinement** - Enhanced error messages, proper uninstaller cleanup
-- 🔧 **MCP protocol debugging** - Added comprehensive error logging for initialization crash
 
 **2. Comprehensive Error Handling System (August 18, 2025)**
 - ✅ **Smart JSON recovery** - Handles corrupted, empty, and missing Claude Desktop configs
@@ -90,26 +96,33 @@
 - Progressive error reporting with installer DetailPrint logs
 - User-friendly error messages with troubleshooting guidance
 
-### 🎯 Next Session Priority - August 18, 2025
+### 🎯 Current Session Priority - August 19, 2025
 
-### Critical Testing: Final NSIS Installer Validation
-**MUST TEST FIRST**: New installer with comprehensive PowerShell debugging
-- Download latest installer from GitHub Actions artifacts
-- Test on clean Windows 11 system (user already has access)
-- Verify Claude Desktop configuration works without corruption
-- Confirm all error messages are clear and helpful
+### Critical Testing: Final NSIS Installer with Path Fixes
+**MUST TEST FIRST**: Latest installer build with corrected file paths (commit 709e36c)
+- Download latest installer from GitHub Actions artifacts (should complete momentarily)
+- Test on clean Windows 11 system with comprehensive validation
+- Verify MCP server properly initializes in Claude Desktop (no more "server not found" errors)
+- Confirm all file paths are correct and PowerShell configuration succeeds
+
+### Testing Validation Checklist:
+1. **Installer runs without errors** - No NSIS compilation issues, clean installation process
+2. **File paths are correct** - PowerShell finds bundled server at `foundry-mcp-server\packages\mcp-server\dist\index.cjs`
+3. **Claude Desktop config succeeds** - JSON configuration updated without corruption
+4. **MCP server initializes** - Claude Desktop successfully loads "foundry-mcp" tools (no crash during initialization)
+5. **Professional appearance** - Custom icon, Start Menu shortcuts, proper uninstaller
+
+### Expected Results:
+- ✅ No more "MCP server not found" errors due to incorrect file paths
+- ✅ Claude Desktop loads all 22 Foundry MCP tools successfully  
+- ✅ Professional installer experience with proper Windows integration
+- ✅ Clean uninstaller that removes all installed files correctly
 
 ### Post-Testing Actions:
 1. **If successful**: Document complete installer workflow and prepare for production release
-2. **If issues remain**: Debug using enhanced error messages and logging system  
+2. **If path issues remain**: Further debug file structure and PowerShell script logic  
 3. **Code signing preparation**: Research SignPath Foundation application for professional distribution
 4. **Final documentation**: Create user installation guide and troubleshooting documentation
-
-### Expected Results:
-- ✅ Claude Desktop configuration succeeds without JSON corruption
-- ✅ Specific error messages displayed if any issues occur  
-- ✅ Professional installer appearance with custom branding
-- ✅ Start Menu shortcuts and Windows integration working properly
 
 ## Previous Session Work (Archive) - Roll Button State Synchronization
 
