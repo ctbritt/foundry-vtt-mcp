@@ -96,27 +96,26 @@
 - Progressive error reporting with installer DetailPrint logs
 - User-friendly error messages with troubleshooting guidance
 
-### 🎯 Current Session Priority - August 19, 2025
+### ✅ COMPLETED - August 19, 2025: MCP Server Bundle Fix & UX Improvements
 
-### Critical Testing: Final NSIS Installer with Path Fixes
-**MUST TEST FIRST**: Latest installer build with corrected file paths (commit 709e36c)
-- Download latest installer from GitHub Actions artifacts (should complete momentarily)
-- Test on clean Windows 11 system with comprehensive validation
-- Verify MCP server properly initializes in Claude Desktop (no more "server not found" errors)
-- Confirm all file paths are correct and PowerShell configuration succeeds
+#### **Major Issues Resolved:**
+**1. MCP Server Crash Issue (Completely Fixed)**
+- ✅ **Root Cause**: Bundle entry point detection failed (`import.meta.url === 'bundled'` missing)
+- ✅ **Solution**: Fixed `src/index.ts:301` to handle bundled execution properly
+- ✅ **Result**: MCP server initializes correctly, all 22 tools available in Claude Desktop
+- ✅ **Verification**: Tested on both development machine and fresh installation
 
-### Testing Validation Checklist:
-1. **Installer runs without errors** - No NSIS compilation issues, clean installation process
-2. **File paths are correct** - PowerShell finds bundled server at `foundry-mcp-server\packages\mcp-server\dist\index.cjs`
-3. **Claude Desktop config succeeds** - JSON configuration updated without corruption
-4. **MCP server initializes** - Claude Desktop successfully loads "foundry-mcp" tools (no crash during initialization)
-5. **Professional appearance** - Custom icon, Start Menu shortcuts, proper uninstaller
+**2. Foundry Module UX Improvements (v0.4.8)**
+- ✅ **Module Enabled by Default**: Changed `settings.ts:69` from `default: false` to `default: true`
+- ✅ **Version Synchronization**: Updated module from v0.4.7 to v0.4.8 to match MCP server
+- ✅ **Better Error Messages**: Initial connection failures now log as warnings, not errors
+- ✅ **User-Friendly Feedback**: "MCP server not available (normal if server isn't running)"
 
-### Expected Results:
-- ✅ No more "MCP server not found" errors due to incorrect file paths
-- ✅ Claude Desktop loads all 22 Foundry MCP tools successfully  
-- ✅ Professional installer experience with proper Windows integration
-- ✅ Clean uninstaller that removes all installed files correctly
+**3. Professional Installer Validation**
+- ✅ **Local Testing**: Installer works perfectly with fixed bundle
+- ✅ **Remote Testing**: Successfully tested on fresh Windows machine
+- ✅ **File Structure**: Correct `foundry-mcp-server\packages\mcp-server\dist\index.cjs` path
+- ✅ **Claude Desktop**: Configuration updates correctly, tools load successfully
 
 ### Post-Testing Actions:
 1. **If successful**: Document complete installer workflow and prepare for production release

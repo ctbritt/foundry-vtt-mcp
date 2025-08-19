@@ -297,7 +297,8 @@ process.on('unhandledRejection', async (reason, promise) => {
 // More robust entry point detection for ES modules
 const isMainModule = import.meta.url === `file://${process.argv[1]}` || 
                    import.meta.url.endsWith(process.argv[1]) ||
-                   process.argv[1].endsWith('index.js');
+                   process.argv[1].endsWith('index.js') ||
+                   import.meta.url === 'bundled'; // Handle bundled version
 
 if (isMainModule) {
   main().catch(async (error) => {

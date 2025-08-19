@@ -186,8 +186,12 @@ class FoundryMCPBridge {
       console.log(`[${MODULE_ID}] GM connection established - Bridge active for user: ${game.user?.name}`);
 
     } catch (error) {
-      console.error(`[${MODULE_ID}] Failed to start bridge:`, error);
-      ui.notifications.error(`Failed to connect MCP Bridge: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // Log as warning instead of error for initial connection failures
+      console.warn(`[${MODULE_ID}] Failed to start bridge:`, error);
+      
+      // Don't show UI notification for initial connection failures during startup
+      // Users expect this when MCP server isn't running yet - only warn in console
+      // UI notifications will appear during reconnection attempts instead
       
       await this.settings.setSetting('lastConnectionState', 'error');
       throw error;

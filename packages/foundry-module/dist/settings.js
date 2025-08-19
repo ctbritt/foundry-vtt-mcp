@@ -57,7 +57,7 @@ export class ModuleSettings {
             scope: 'world',
             config: true,
             type: Boolean,
-            default: false,
+            default: true,
             onChange: this.onEnabledChange.bind(this),
         });
         game.settings.register(this.moduleId, 'serverHost', {

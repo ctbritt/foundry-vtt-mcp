@@ -59,7 +59,12 @@ export class SocketBridge {
 
         this.ws.onerror = (error) => {
           clearTimeout(connectTimeout);
-          this.log(`Connection error: ${error}`);
+          // Use more informative message for connection failures
+          const isFirstAttempt = this.reconnectAttempts === 0;
+          const errorMsg = isFirstAttempt ? 
+            'MCP server not available (this is normal if server isn\'t running)' :
+            `Connection error after ${this.reconnectAttempts} attempts: ${error}`;
+          this.log(errorMsg);
           this.connectionState = CONNECTION_STATES.DISCONNECTED;
           this.scheduleReconnect();
           reject(new Error('WebSocket connection failed'));

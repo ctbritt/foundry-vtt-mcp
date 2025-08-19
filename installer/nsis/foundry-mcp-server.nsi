@@ -187,9 +187,11 @@ Section "Foundry MCP Server" SecMain
   File /r "node\"
   File "node.exe"
   
-  ; Install MCP Server files
+  ; Install MCP Server files  
   DetailPrint "Installing MCP Server..."
-  File /r "foundry-mcp-server\"
+  SetOutPath "$INSTDIR\foundry-mcp-server"
+  File /r "foundry-mcp-server\*"
+  SetOutPath "$INSTDIR"
   
   ; Install documentation
   File "README.txt"

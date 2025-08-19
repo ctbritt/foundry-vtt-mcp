@@ -31464,7 +31464,7 @@ process.on("uncaughtException", async (error) => {
 process.on("unhandledRejection", async (reason, promise) => {
   await logAndExit(logger, "Unhandled rejection", { reason, promise });
 });
-var isMainModule = "bundled" === `file://${process.argv[1]}` || "bundled".endsWith(process.argv[1]) || process.argv[1].endsWith("index.js");
+var isMainModule = "bundled" === `file://${process.argv[1]}` || "bundled".endsWith(process.argv[1]) || process.argv[1].endsWith("index.js") || true;
 if (isMainModule) {
   main().catch(async (error) => {
     await logAndExit(logger, "Unhandled error in main", error);
