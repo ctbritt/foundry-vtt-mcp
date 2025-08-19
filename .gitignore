@@ -56,7 +56,7 @@ tmp/
 temp/
 
 # Package manager files
-package-lock.json
+# package-lock.json - COMMENTED OUT: needed for reproducible CI builds with npm ci
 yarn.lock
 pnpm-lock.yaml
 
