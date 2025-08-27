@@ -12,9 +12,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag (e.g., v0.4.8)'
+        description: 'Version tag (leave empty to auto-detect from package.json)'
         required: false
-        default: 'v0.4.8'
+        default: ''
 
 jobs:
   build-nsis:
