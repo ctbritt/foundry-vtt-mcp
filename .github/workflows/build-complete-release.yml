@@ -220,14 +220,12 @@ jobs:
         path: installer/build/FoundryMCPServer-Setup-${{ env.PACKAGE_VERSION }}.exe
         retention-days: 30
         
-    - name: Create Release (on tag)
+    - name: Create Release with All Assets (on tag)
       if: startsWith(github.ref, 'refs/tags/v')
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ github.ref_name }}
-        release_name: Foundry MCP Server ${{ github.ref_name }}
+        name: Foundry MCP Server ${{ github.ref_name }}
         body: |
           ## Foundry MCP Server ${{ github.ref_name }}
           
@@ -265,38 +263,10 @@ jobs:
           - Enhanced creature index for instant monster searches
           
           For full documentation, visit: https://github.com/adambdooley/foundry-vtt-mcp
+        files: |
+          installer/build/FoundryMCPServer-Setup-${{ env.PACKAGE_VERSION }}.exe
+          foundry-vtt-mcp.zip
+          foundry-mcp-server-${{ env.PACKAGE_VERSION }}.zip
+        generate_release_notes: true
         draft: false
         prerelease: false
-        
-    - name: Upload NSIS Installer Asset (on tag)
-      if: startsWith(github.ref, 'refs/tags/v')
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: installer/build/FoundryMCPServer-Setup-${{ env.PACKAGE_VERSION }}.exe
-        asset_name: FoundryMCPServer-Setup-${{ env.PACKAGE_VERSION }}.exe
-        asset_content_type: application/octet-stream
-        
-    - name: Upload Foundry Module Asset (on tag)
-      if: startsWith(github.ref, 'refs/tags/v')
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: foundry-vtt-mcp.zip
-        asset_name: foundry-vtt-mcp.zip
-        asset_content_type: application/zip
-        
-    - name: Upload Standalone MCP Server Asset (on tag)
-      if: startsWith(github.ref, 'refs/tags/v')
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: foundry-mcp-server-${{ env.PACKAGE_VERSION }}.zip
-        asset_name: foundry-mcp-server-${{ env.PACKAGE_VERSION }}.zip
-        asset_content_type: application/zip
