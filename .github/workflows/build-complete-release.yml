@@ -159,26 +159,26 @@ jobs:
         $standalonePackage | Out-File -FilePath "$standalonePath\package.json" -Encoding UTF8
         
         # Create README for standalone
-        $readmeContent = @"
-# Foundry MCP Server - Manual Installation
-
-This package contains the standalone MCP server for manual installation on any platform.
-
-## Requirements
-- Node.js 18.0.0 or later
-- Foundry VTT with MCP Bridge module installed
-
-## Installation
-1. Extract this ZIP to your desired location  
-2. Run: npm start or node index.js
-3. Configure Claude Desktop to connect to this server
-4. Install the MCP Bridge module in Foundry VTT
-
-For full documentation visit: https://github.com/adambdooley/foundry-vtt-mcp
-
-Version: ${{ env.PACKAGE_VERSION }}
-"@
-        $readmeContent | Out-File -FilePath "$standalonePath\README.md" -Encoding UTF8
+        $readmeLines = @(
+          "# Foundry MCP Server - Manual Installation",
+          "",
+          "This package contains the standalone MCP server for manual installation on any platform.",
+          "",
+          "## Requirements",
+          "- Node.js 18.0.0 or later",
+          "- Foundry VTT with MCP Bridge module installed",
+          "",
+          "## Installation",
+          "1. Extract this ZIP to your desired location",
+          "2. Run: npm start or node index.js",
+          "3. Configure Claude Desktop to connect to this server",
+          "4. Install the MCP Bridge module in Foundry VTT",
+          "",
+          "For full documentation visit: https://github.com/adambdooley/foundry-vtt-mcp",
+          "",
+          "Version: ${{ env.PACKAGE_VERSION }}"
+        )
+        $readmeLines | Out-File -FilePath "$standalonePath\README.md" -Encoding UTF8
         
         # Create the ZIP
         $compress = @{
