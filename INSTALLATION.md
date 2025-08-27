@@ -9,9 +9,9 @@ This guide covers the complete installation of the Foundry VTT AI Model Integrat
 
 ## Prerequisites
 
-- **Foundry VTT**: Version 11 or higher (verified through v13)
-- **AI Model Access**: Claude Desktop, local LLM, or compatible MCP client
-- **Operating System**: Windows 10+, macOS 10.14+, or Linux (Ubuntu 18+)
+- **Foundry VTT**: v13
+- **AI Model Access**: Claude Desktop
+- **Operating System**: Windows 10+
 - **Node.js**: Version 18+ (for MCP Server)
 
 ### Option 1: Windows Installer (Recommended)
