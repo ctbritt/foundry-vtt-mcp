@@ -40,11 +40,11 @@ InstallDir "$LOCALAPPDATA\FoundryMCPServer"
 RequestExecutionLevel user
 
 ; Version information
-VIProductVersion "0.4.11.0"
+VIProductVersion "0.4.12.0"
 VIAddVersionKey "ProductName" "Foundry MCP Server"
 VIAddVersionKey "CompanyName" "Foundry MCP Bridge"
 VIAddVersionKey "FileDescription" "AI-powered campaign management for Foundry VTT"
-VIAddVersionKey "FileVersion" "0.4.11.0"
+VIAddVersionKey "FileVersion" "0.4.12.0"
 VIAddVersionKey "LegalCopyright" "© 2024 Foundry MCP Bridge"
 
 ;--------------------------------
@@ -331,7 +331,7 @@ Section "Foundry MCP Server" SecMain
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\FoundryMCPServer" "UninstallString" "$INSTDIR\Uninstall.exe"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\FoundryMCPServer" "DisplayIcon" "$INSTDIR\icon.ico"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\FoundryMCPServer" "Publisher" "Foundry MCP Bridge"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\FoundryMCPServer" "DisplayVersion" "0.4.11"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\FoundryMCPServer" "DisplayVersion" "0.4.12"
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\FoundryMCPServer" "NoModify" 1
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\FoundryMCPServer" "NoRepair" 1
   

@@ -1,4 +1,4 @@
-name: Build NSIS Release
+name: Build Complete Release
 
 on:
   push:
@@ -109,6 +109,96 @@ jobs:
         cd installer
         node build-nsis.js --version $env:PACKAGE_VERSION
         
+    - name: Create Foundry Module ZIP
+      run: |
+        Write-Host "📦 Creating Foundry module ZIP for registry..."
+        cd packages/foundry-module
+        
+        # Create ZIP excluding hidden files and node_modules
+        $compress = @{
+          Path = Get-ChildItem -Path "." -Exclude ".*", "node_modules"
+          DestinationPath = "..\..\foundry-vtt-mcp.zip"
+          CompressionLevel = "Optimal"
+        }
+        Compress-Archive @compress -Force
+        
+        # Verify ZIP was created
+        if (Test-Path "..\..\foundry-vtt-mcp.zip") {
+          $size = (Get-Item "..\..\foundry-vtt-mcp.zip").Length / 1KB
+          Write-Host "✓ Foundry module ZIP created ($([math]::Round($size, 1)) KB)"
+        } else {
+          Write-Host "❌ Foundry module ZIP creation failed"
+          exit 1
+        }
+        
+    - name: Create Standalone MCP Server ZIP
+      run: |
+        Write-Host "📦 Creating standalone MCP server ZIP for manual installation..."
+        
+        # Create a temporary directory for the standalone package
+        $standalonePath = "standalone-mcp-server"
+        New-Item -ItemType Directory -Force -Path $standalonePath
+        
+        # Copy MCP server bundle
+        Copy-Item "packages\mcp-server\dist\index.bundle.cjs" "$standalonePath\index.js"
+        
+        # Create package.json for standalone
+        $standalonePackage = @{
+          name = "foundry-mcp-server"
+          version = "${{ env.PACKAGE_VERSION }}".TrimStart('v')
+          description = "Foundry VTT MCP Server - Standalone Installation"
+          main = "index.js"
+          scripts = @{
+            start = "node index.js"
+          }
+          engines = @{
+            node = ">=18.0.0"
+          }
+        } | ConvertTo-Json -Depth 3
+        
+        $standalonePackage | Out-File -FilePath "$standalonePath\package.json" -Encoding UTF8
+        
+        # Create README for standalone
+        @"
+# Foundry MCP Server - Manual Installation
+
+This package contains the standalone MCP server for manual installation on any platform.
+
+## Requirements
+- Node.js 18.0.0 or later
+- Foundry VTT with MCP Bridge module installed
+
+## Installation
+1. Extract this ZIP to your desired location
+2. Run: ``npm start`` or ``node index.js``
+3. Configure Claude Desktop to connect to this server
+4. Install the MCP Bridge module in Foundry VTT
+
+For full documentation visit: https://github.com/adambdooley/foundry-vtt-mcp
+
+Version: ${{ env.PACKAGE_VERSION }}
+"@ | Out-File -FilePath "$standalonePath\README.md" -Encoding UTF8
+        
+        # Create the ZIP
+        $compress = @{
+          Path = $standalonePath
+          DestinationPath = "foundry-mcp-server-${{ env.PACKAGE_VERSION }}.zip"
+          CompressionLevel = "Optimal"
+        }
+        Compress-Archive @compress -Force
+        
+        # Verify and clean up
+        if (Test-Path "foundry-mcp-server-${{ env.PACKAGE_VERSION }}.zip") {
+          $size = (Get-Item "foundry-mcp-server-${{ env.PACKAGE_VERSION }}.zip").Length / 1KB
+          Write-Host "✓ Standalone MCP server ZIP created ($([math]::Round($size, 1)) KB)"
+        } else {
+          Write-Host "❌ Standalone MCP server ZIP creation failed"
+          exit 1
+        }
+        
+        # Clean up temporary directory
+        Remove-Item -Recurse -Force $standalonePath
+
     - name: Verify installer package
       run: |
         cd installer/build
@@ -140,14 +230,29 @@ jobs:
         body: |
           ## Foundry MCP Server ${{ github.ref_name }}
           
-          Professional Windows installer for Foundry MCP Server - AI-powered campaign management for Foundry VTT using Claude Desktop.
+          Complete multi-platform distribution for Foundry MCP Server - AI-powered campaign management for Foundry VTT using Claude Desktop.
+          
+          ### 📦 Installation Options
+          
+          **Windows Users (Recommended):**
+          - Download `FoundryMCPServer-Setup-${{ github.ref_name }}.exe`
+          - Run installer (no admin rights required)
+          - Automatic Claude Desktop configuration
+          
+          **Manual Installation (All Platforms):**
+          - Download `foundry-mcp-server-${{ github.ref_name }}.zip`
+          - Extract and run with Node.js 18+
+          - Manual Claude Desktop configuration required
+          
+          **Foundry VTT Users:**
+          - Install directly from Foundry's module browser
+          - Or use manifest: `https://raw.githubusercontent.com/adambdooley/foundry-vtt-mcp/master/packages/foundry-module/module.json`
           
           ### 🚀 Quick Start
-          1. Download `FoundryMCPServer-Setup-${{ github.ref_name }}.exe`
-          2. Run installer (no admin rights required)
+          1. Choose your installation method above
+          2. Install MCP Bridge module in Foundry VTT
           3. Restart Claude Desktop
-          4. Install MCP Bridge module in Foundry VTT
-          5. Start creating AI-powered campaigns!
+          4. Start creating AI-powered campaigns!
           
           ### 📋 Features
           - 20 MCP tools for comprehensive Foundry VTT integration
@@ -158,17 +263,11 @@ jobs:
           - Actor ownership management with bulk operations
           - Enhanced creature index for instant monster searches
           
-          ### 🔧 Installation
-          - No admin rights required
-          - Automatic Claude Desktop configuration
-          - Portable Node.js runtime included
-          - Professional Windows installer with Start Menu shortcuts
-          
           For full documentation, visit: https://github.com/adambdooley/foundry-vtt-mcp
         draft: false
         prerelease: false
         
-    - name: Upload Release Asset (on tag)
+    - name: Upload NSIS Installer Asset (on tag)
       if: startsWith(github.ref, 'refs/tags/v')
       uses: actions/upload-release-asset@v1
       env:
@@ -178,3 +277,25 @@ jobs:
         asset_path: installer/build/FoundryMCPServer-Setup-${{ env.PACKAGE_VERSION }}.exe
         asset_name: FoundryMCPServer-Setup-${{ env.PACKAGE_VERSION }}.exe
         asset_content_type: application/octet-stream
+        
+    - name: Upload Foundry Module Asset (on tag)
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: foundry-vtt-mcp.zip
+        asset_name: foundry-vtt-mcp.zip
+        asset_content_type: application/zip
+        
+    - name: Upload Standalone MCP Server Asset (on tag)
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: foundry-mcp-server-${{ env.PACKAGE_VERSION }}.zip
+        asset_name: foundry-mcp-server-${{ env.PACKAGE_VERSION }}.zip
+        asset_content_type: application/zip
