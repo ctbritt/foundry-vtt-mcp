@@ -1,5 +1,48 @@
 #!/usr/bin/env node
 
+// SINGLETON CHECK - Graceful MCP-compatible duplicate process handling  
+// This prevents Claude Desktop "Server disconnected" errors by handling duplicates properly
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+
+const LOCK_FILE = path.join(os.tmpdir(), 'foundry-mcp-server.lock');
+let isDuplicateProcess = false;
+
+// Check if we're a duplicate process
+try {
+  fs.writeFileSync(LOCK_FILE, process.pid.toString(), { flag: 'wx' });
+  // Success - we got the lock, continue with normal execution
+  process.on('exit', () => {
+    try { fs.unlinkSync(LOCK_FILE); } catch (e) { /* ignore */ }
+  });
+} catch (error: any) {
+  if (error.code === 'EEXIST') {
+    // Lock exists - check if process is still alive
+    try {
+      const existingPid = parseInt(fs.readFileSync(LOCK_FILE, 'utf8'));
+      try {
+        process.kill(existingPid, 0); // Check if process exists
+        // Process exists - we're duplicate, but handle gracefully for Claude Desktop
+        isDuplicateProcess = true;
+      } catch (killError) {
+        // Process dead - remove stale lock and try again
+        fs.unlinkSync(LOCK_FILE);
+        fs.writeFileSync(LOCK_FILE, process.pid.toString(), { flag: 'wx' });
+        process.on('exit', () => {
+          try { fs.unlinkSync(LOCK_FILE); } catch (e) { /* ignore */ }
+        });
+      }
+    } catch (readError) {
+      // Can't read lock file - mark as duplicate to be safe
+      isDuplicateProcess = true;
+    }
+  } else {
+    // Other error - mark as duplicate to be safe
+    isDuplicateProcess = true;
+  }
+}
+
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -275,14 +318,39 @@ process.on('unhandledRejection', async (reason, promise) => {
   await logAndExit(logger, 'Unhandled rejection', { reason, promise });
 });
 
-// Start the server if this file is run directly
-// More robust entry point detection for ES modules
-const isMainModule = import.meta.url === `file://${process.argv[1]}` || 
-                   import.meta.url.endsWith(process.argv[1]) ||
-                   process.argv[1].endsWith('index.js') ||
-                   import.meta.url === 'bundled'; // Handle bundled version
+// Handle duplicate processes gracefully for Claude Desktop compatibility
+if (isDuplicateProcess) {
+  console.error(`[SINGLETON] Duplicate process ${process.pid} - will provide minimal MCP response and exit gracefully`);
+  
+  // Start a minimal MCP server that responds to basic protocol but does nothing
+  const duplicateServer = new Server(
+    { name: 'foundry-mcp-duplicate', version: '0.0.1' },
+    { capabilities: { tools: {} } }
+  );
+  
+  // Handle basic protocol requirements
+  duplicateServer.setRequestHandler(ListToolsRequestSchema, async () => {
+    return { tools: [] }; // Empty tools list
+  });
+  
+  // Start minimal server and exit gracefully after a short delay
+  const transport = new StdioServerTransport();
+  duplicateServer.connect(transport).then(() => {
+    console.error(`[SINGLETON] Duplicate process ${process.pid} connected, will exit after 1 second`);
+    setTimeout(() => {
+      console.error(`[SINGLETON] Duplicate process ${process.pid} exiting gracefully`);
+      process.exit(0);
+    }, 1000);
+  }).catch(() => {
+    // If connection fails, just exit
+    process.exit(0);
+  });
+} else {
+  // Normal process - continue with full initialization
+  console.error(`[SINGLETON] Process ${process.pid} continuing - singleton verified`);
+  logger.info(`MCP Server process started - PID: ${process.pid}, Args: ${JSON.stringify(process.argv)}`);
 
-if (isMainModule) {
+  // Start the main server initialization
   main().catch(async (error) => {
     await logAndExit(logger, 'Unhandled error in main', error);
   });
