@@ -15,6 +15,11 @@ on:
         description: 'Version tag (leave empty to auto-detect from package.json)'
         required: false
         default: ''
+      dry_run_foundry:
+        description: 'Test Foundry API call without actually updating registry'
+        required: false
+        default: 'false'
+        type: boolean
 
 jobs:
   build-nsis:
@@ -267,6 +272,88 @@ jobs:
           installer/build/FoundryMCPServer-Setup-${{ env.PACKAGE_VERSION }}.exe
           foundry-vtt-mcp.zip
           foundry-mcp-server-${{ env.PACKAGE_VERSION }}.zip
+          packages/foundry-module/module.json
         generate_release_notes: true
         draft: false
         prerelease: false
+
+    - name: Update Foundry VTT Package Registry
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        Write-Host "🔄 Updating Foundry VTT Package Registry..."
+        
+        # Extract package information
+        $packageJson = Get-Content "packages\foundry-module\module.json" -Raw | ConvertFrom-Json
+        $packageId = $packageJson.id
+        $version = "${{ env.PACKAGE_VERSION }}".TrimStart('v')
+        $manifestUrl = "https://github.com/adambdooley/foundry-vtt-mcp/releases/download/${{ github.ref_name }}/module.json"
+        $releaseNotesUrl = "https://github.com/adambdooley/foundry-vtt-mcp/releases/tag/${{ github.ref_name }}"
+        
+        Write-Host "📦 Package ID: $packageId"
+        Write-Host "📝 Version: $version"  
+        Write-Host "📎 Manifest URL: $manifestUrl"
+        Write-Host "📋 Release Notes: $releaseNotesUrl"
+        
+        # Check if this is a dry run
+        $isDryRun = '${{ github.event.inputs.dry_run_foundry }}' -eq 'true'
+        if ($isDryRun) {
+          Write-Host "🧪 DRY RUN MODE: Testing API call without updating registry"
+        }
+        
+        # Prepare API request body
+        $requestBody = @{
+          id = $packageId
+          release = @{
+            version = $version
+            manifest = $manifestUrl
+            notes = $releaseNotesUrl
+            compatibility = @{
+              minimum = $packageJson.compatibility.minimum
+              verified = $packageJson.compatibility.verified  
+              maximum = $packageJson.compatibility.maximum
+            }
+          }
+        }
+        
+        # Add dry-run parameter if testing
+        if ($isDryRun) {
+          $requestBody['dry-run'] = $true
+        }
+        
+        $requestBodyJson = $requestBody | ConvertTo-Json -Depth 3
+        
+        Write-Host "🔧 Request Body:"
+        Write-Host $requestBodyJson
+        
+        try {
+          # Make API call to Foundry VTT Package Registry
+          $headers = @{
+            'Content-Type' = 'application/json'
+            'Authorization' = '${{ secrets.FOUNDRY_PACKAGE_RELEASE_TOKEN }}'
+          }
+          
+          $response = Invoke-RestMethod -Uri "https://foundryvtt.com/_api/packages/release_version/" -Method POST -Headers $headers -Body $requestBodyJson
+          
+          Write-Host "✅ Successfully updated Foundry VTT Package Registry"
+          Write-Host "📄 Response: $($response | ConvertTo-Json -Depth 2)"
+          
+        } catch {
+          Write-Host "❌ Failed to update Foundry VTT Package Registry"
+          
+          # Mask any potential token exposure in error messages
+          $errorMessage = $_.Exception.Message -replace 'fvttp_[A-Za-z0-9]+', '***MASKED***'
+          Write-Host "🔍 Error: $errorMessage"
+          
+          if ($_.Exception.Response) {
+            $errorResponse = $_.Exception.Response.GetResponseStream()
+            $reader = New-Object System.IO.StreamReader($errorResponse)
+            $errorBody = $reader.ReadToEnd()
+            # Mask any potential token in error response
+            $safeErrorBody = $errorBody -replace 'fvttp_[A-Za-z0-9]+', '***MASKED***'
+            Write-Host "📄 Error Response: $safeErrorBody"
+          }
+          
+          # Fail the workflow if Foundry registry update fails
+          Write-Host "🚨 Foundry Package Registry update is required for complete release"
+          exit 1
+        }
