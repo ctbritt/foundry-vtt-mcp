@@ -9,6 +9,18 @@ import * as os from 'os';
 const LOCK_FILE = path.join(os.tmpdir(), 'foundry-mcp-server.lock');
 let isDuplicateProcess = false;
 
+// Create cross-platform log directory
+const LOG_DIR = process.env.FOUNDRY_LOG_DIR || path.join(os.tmpdir(), 'foundry-mcp-server');
+try {
+  fs.mkdirSync(LOG_DIR, { recursive: true });
+} catch (err) {
+  // Continue without logging if directory creation fails
+  console.error(`[WARNING] Cannot create log directory: ${LOG_DIR}`);
+}
+
+const ERROR_LOG_PATH = path.join(LOG_DIR, 'mcp-server-error.log');
+const MAIN_LOG_PATH = path.join(LOG_DIR, 'mcp-server.log');
+
 // Check if we're a duplicate process
 try {
   fs.writeFileSync(LOCK_FILE, process.pid.toString(), { flag: 'wx' });
@@ -67,7 +79,7 @@ async function logAndExit(logger: Logger, message: string, error: any): Promise<
     const fs = await import('fs');
     const errorLog = `${new Date().toISOString()} ${message}: ${error?.stack || error}\n`;
     try {
-      fs.appendFileSync('logs/mcp-server-error.log', errorLog);
+      fs.appendFileSync(ERROR_LOG_PATH, errorLog);
     } catch (fsErr) {
       // If we can't even write to file, nothing we can do
     }
@@ -84,8 +96,8 @@ const logger = new Logger({
   level: 'info', // Production level
   format: config.logFormat,
   enableConsole: false, // Disabled for MCP stdio communication
-  enableFile: true, // Enable for production logging
-  filePath: 'logs/mcp-server.log',
+  enableFile: process.env.FOUNDRY_DISABLE_LOGGING !== 'true', // Allow disabling file logging
+  filePath: MAIN_LOG_PATH,
 });
 
 // Initialize Foundry client
