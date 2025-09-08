@@ -101,6 +101,28 @@ Once connected, ask Claude Desktop:
 - **Actor Ownership**: Manage player permissions for characters and tokens
 - **GM-Only**: MCP Bridge only connects to Game Master users
 
+## Settings
+
+<img width="698" height="728" alt="image" src="https://github.com/user-attachments/assets/723d03a9-a559-443f-b9d0-5c23d6edf279" />
+
+- **Enhanced Creature Index** Configure Enhanced Index button leads to Enhanced Creature Index sub-menu (Details below)
+- **Enable MCP Bridge** This should be checked by default and the status should show as connected. It can be used to turn off the MCP Bridge connection within the game without the need to disable the add-on itself 
+- **Server Host** IP Address of Claude Desktop MCP Server location. Defaults to localhost. Remote Foundry servers need to point claude desktop. [Port Forwarding knowledge may be required for Server Port](https://portforward.com/) 
+**Server Port** Default port is 31415 and if it is changed here then the FOUNDRY_PORT environment variable will need to be chagned for the MCP server 
+- **Allow Write Operations** This will prevent Claude from making any changes to world content and restrict it to reading only
+- **Max Actors Per Request** This is a failsafe to stop a massive amount of actors being created from one single request. It does not limit the amount of characters being created by multiple requests
+- **Show Connection Messages** This can turn off the banner messages for connections for Foundry MCP Bridge
+- **Auto-Reconnect on Disconnect** Will automatically attempt to reconnect if the connection is lost
+- **Connection Check Frequency** How often it will check connection status  
+
+### Enhanced Creature Index Sub-menu
+
+<img width="497" height="604" alt="image" src="https://github.com/user-attachments/assets/bf1a6fdb-9bd5-4256-b922-d28cf65b1e7d" />
+
+- **Rebuild Creature Index** This button will rebuild the creature index if there is an issue or it is out of sync with changes in your compendiums
+- **Enable Enhanced Creature Index** This should be left on as Claude builds additional metadata in the world files to give it better searches
+- **Auto-Rebuild Index on Pack Changes** Experimental feature that hasn't been fully tested yet
+
 ## Architecture
 
 ```
