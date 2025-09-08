@@ -26,6 +26,8 @@ This project was built with the assistance of Claude Code. If you like this proj
 
 ### Option 1: Windows Installer (Recommended)
 
+[Video guide for Windows Installer](https://youtu.be/Se04A21wrbE)
+
 1. Download the latest `FoundryMCPServer-Setup.exe` from [Releases](https://github.com/adambdooley/foundry-vtt-mcp/releases)
 2. Run the installer - it will:
    - Install the MCP server with bundled Node.js runtime
