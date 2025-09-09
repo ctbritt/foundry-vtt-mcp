@@ -98,7 +98,7 @@ jobs:
         }
         
     - name: Install workspace dependencies
-      run: npm ci --workspaces --include-workspace-root
+      run: npm install --workspaces --include-workspace-root
       
     - name: Build shared types
       run: npm run build --workspace=shared
@@ -357,3 +357,4 @@ jobs:
           Write-Host "🚨 Foundry Package Registry update is required for complete release"
           exit 1
         }
+
