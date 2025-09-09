@@ -97,8 +97,8 @@ jobs:
           exit 1
         }
         
-    - name: Install workspace dependencies
-      run: npm install --workspaces --include-workspace-root
+    - name: Install workspace dependencies (CI)
+      run: npm ci --workspaces --include-workspace-root
       
     - name: Build shared types
       run: npm run build --workspace=shared

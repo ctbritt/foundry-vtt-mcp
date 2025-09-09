@@ -20,7 +20,7 @@
     "lint:fix": "eslint src --ext .ts --fix"
   },
   "dependencies": {
-    "@foundry-mcp/shared": "workspace:*",
+    "@foundry-mcp/shared": "^0.4.17",
     "@modelcontextprotocol/sdk": "^1.7.0",
     "dotenv": "^16.3.0",
     "ws": "^8.14.0",
