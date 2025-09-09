@@ -17,11 +17,22 @@ const { execSync } = require('child_process');
 // Parse command line arguments
 const args = process.argv.slice(2);
 let version = 'v0.4.13'; // default version
+let skipDownload = false;
+let skipNsis = false;
 
 for (let i = 0; i < args.length; i++) {
     if (args[i] === '--version' && i + 1 < args.length) {
         version = args[i + 1];
-        break;
+        i++;
+        continue;
+    }
+    if (args[i] === '--skip-download') {
+        skipDownload = true;
+        continue;
+    }
+    if (args[i] === '--skip-nsis') {
+        skipNsis = true;
+        continue;
     }
 }
 
@@ -111,6 +122,60 @@ function downloadAndExtractNode() {
         console.error('   ❌ Failed to extract Node.js:', error.message);
         process.exit(1);
     }
+}
+
+// New implementation that supports backend + shared runtime
+function copyMcpServerFilesV2() {
+    console.log('dY"� Preparing MCP Server files (V2)...');
+
+    const rootDir = path.join(__dirname, '..');
+    const mcpServerSource = path.join(rootDir, 'packages', 'mcp-server');
+    const sharedSource = path.join(rootDir, 'shared');
+    const mcpServerDest = path.join(config.outputDir, 'foundry-mcp-server');
+
+    // Ensure MCP server was built and bundled
+    const builtBundlePath = path.join(mcpServerSource, 'dist', 'index.bundle.cjs');
+    if (!fs.existsSync(builtBundlePath)) {
+        console.error('   �?O MCP server bundle not found. Run "npm run build:bundle --workspace=packages/mcp-server" first.');
+        process.exit(1);
+    }
+
+    // Create directory structure
+    ensureDir(path.join(mcpServerDest, 'packages', 'mcp-server'));
+    ensureDir(path.join(mcpServerDest, 'shared'));
+
+    // Copy full dist for backend and dependencies
+    console.log('   dY"� Copying MCP server dist (for backend runtime)...');
+    const distSrc = path.join(mcpServerSource, 'dist');
+    const distDst = path.join(mcpServerDest, 'packages', 'mcp-server', 'dist');
+    ensureDir(distDst);
+    copyRecursive(distSrc, distDst);
+
+    // Overwrite wrapper entry with bundled single-file for minimal deps
+    console.log('   dY"� Installing bundled wrapper entry...');
+    fs.copyFileSync(builtBundlePath, path.join(distDst, 'index.cjs'));
+
+    // Also copy bundled backend if present (wrapper prefers it)
+    const backendBundlePath = path.join(mcpServerSource, 'dist', 'backend.bundle.cjs');
+    if (fs.existsSync(backendBundlePath)) {
+        fs.copyFileSync(backendBundlePath, path.join(distDst, 'backend.bundle.cjs'));
+        console.log('   �o" Bundled backend included');
+    }
+
+    // Copy server package.json
+    fs.copyFileSync(path.join(mcpServerSource, 'package.json'), path.join(mcpServerDest, 'packages', 'mcp-server', 'package.json'));
+
+    // Copy shared files to both a direct folder and a node_modules package for runtime resolution
+    console.log('   dY"? Copying shared files...');
+    copyRecursive(path.join(sharedSource, 'dist'), path.join(mcpServerDest, 'shared', 'dist'));
+    fs.copyFileSync(path.join(sharedSource, 'package.json'), path.join(mcpServerDest, 'shared', 'package.json'));
+
+    const sharedPkgDst = path.join(mcpServerDest, 'node_modules', '@foundry-mcp', 'shared');
+    ensureDir(sharedPkgDst);
+    copyRecursive(path.join(sharedSource, 'dist'), path.join(sharedPkgDst, 'dist'));
+    fs.copyFileSync(path.join(sharedSource, 'package.json'), path.join(sharedPkgDst, 'package.json'));
+
+    console.log('   �o" MCP server files prepared');
 }
 
 function copyMcpServerFiles() {
@@ -420,12 +485,16 @@ async function build() {
         
         console.log('   ✓ Build environment ready\n');
         
-        // Download and extract Node.js
-        downloadAndExtractNode();
-        console.log();
+        // Download and extract Node.js (unless skipped)
+        if (!skipDownload) {
+            downloadAndExtractNode();
+            console.log();
+        } else {
+            console.log('   dY"< Skipping Node.js runtime download (staging-only)');
+        }
         
         // Copy MCP server files
-        copyMcpServerFiles();
+        copyMcpServerFilesV2();
         console.log();
         
         // Copy Foundry module files
@@ -436,8 +505,8 @@ async function build() {
         copyInstallerFiles();
         console.log();
         
-        // Build NSIS installer
-        const success = buildInstaller();
+        // Build NSIS installer (unless skipped)
+        const success = skipNsis ? (console.log('   dY"< Skipping NSIS compilation (staging-only)'), true) : buildInstaller();
         console.log();
         
         if (success) {

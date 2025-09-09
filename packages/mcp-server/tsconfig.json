@@ -14,8 +14,12 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "composite": true
   },
   "include": ["src/**/*"],
+  "references": [
+    { "path": "../../shared" }
+  ],
   "exclude": ["dist", "**/*.test.*", "**/*.spec.*"]
 }

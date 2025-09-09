@@ -302,7 +302,7 @@ export class CampaignManagementTools {
    */
   private generateDashboardHTML(campaign: CampaignStructure): string {
     const progress = this.calculateProgress(campaign);
-    const currentPart = campaign.parts.find(part => part.status === 'in_progress');
+    const currentPart = campaign.parts.find((part: CampaignPart) => part.status === 'in_progress');
     
     return `<style>
 .campaign-status-toggle {
@@ -376,7 +376,7 @@ export class CampaignManagementTools {
   <h2>Campaign Parts</h2>
   <p><em>Click status indicators to update progress. Changes are saved automatically.</em></p>
   
-  ${campaign.parts.map((part, index) => this.generatePartHTML(part, index + 1, campaign)).join('\n  ')}
+  ${campaign.parts.map((part: CampaignPart, index: number) => this.generatePartHTML(part, index + 1, campaign)).join('\n  ')}
   
   <div class="campaign-notes gmnote">
     <h3>GM Notes</h3>
@@ -412,8 +412,8 @@ export class CampaignManagementTools {
     
     // Add dependencies info if locked
     if (isLocked && part.dependencies.length > 0) {
-      const depNames = part.dependencies.map(depId => {
-        const depPart = campaign.parts.find(p => p.id === depId);
+      const depNames = part.dependencies.map((depId: string) => {
+        const depPart = campaign.parts.find((p: CampaignPart) => p.id === depId);
         return depPart ? depPart.title : depId;
       }).join(', ');
       html += `\n    <p class="dependencies"><small><em>Requires completion of:</em> ${depNames}</small></p>`;
@@ -423,7 +423,7 @@ export class CampaignManagementTools {
     if (part.subParts && part.subParts.length > 0) {
       html += `\n    <div class="sub-parts">`;
       html += `\n      <h4>Sub-Parts:</h4>`;
-      part.subParts.forEach((subPart, subIndex) => {
+      part.subParts.forEach((subPart: any, subIndex: number) => {
         const subStatusTracker = this.generateStatusTracker(subPart, campaign.id);
         html += `\n      <p><strong>${partNumber}.${subIndex + 1}: ${subPart.title}</strong> - Status: ${subStatusTracker}</p>`;
         if (subPart.journalId) {
@@ -473,7 +473,7 @@ export class CampaignManagementTools {
    * Format status for display
    */
   private formatStatus(status: string): string {
-    return status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    return status.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
   }
 
   /**
@@ -482,8 +482,8 @@ export class CampaignManagementTools {
   private isPartLocked(part: CampaignPart, campaign: CampaignStructure): boolean {
     if (part.dependencies.length === 0) return false;
     
-    return part.dependencies.some(depId => {
-      const depPart = campaign.parts.find(p => p.id === depId);
+    return part.dependencies.some((depId: string) => {
+      const depPart = campaign.parts.find((p: CampaignPart) => p.id === depId);
       return !depPart || depPart.status !== 'completed';
     });
   }
@@ -495,10 +495,10 @@ export class CampaignManagementTools {
     let total = 0;
     let completed = 0;
     
-    campaign.parts.forEach(part => {
+    campaign.parts.forEach((part: any) => {
       if (part.subParts && part.subParts.length > 0) {
         total += part.subParts.length;
-        completed += part.subParts.filter(sp => sp.status === 'completed').length;
+        completed += part.subParts.filter((sp: any) => sp.status === 'completed').length;
       } else {
         total += 1;
         if (part.status === 'completed') completed += 1;

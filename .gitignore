@@ -62,4 +62,5 @@ installer/temp/
 
 # Local Configuration
 config.local.json
-.claude/
+.claude/foundry-mcp-server-*.zip
+foundry-vtt-mcp.zip

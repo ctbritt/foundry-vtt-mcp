@@ -1,6 +1,6 @@
 {
   "name": "foundry-mcp-integration",
-  "version": "0.4.16",
+  "version": "0.4.17",
   "description": "MCP server that bridges Foundry VTT game data with Claude Desktop",
   "private": true,
   "workspaces": [
@@ -12,6 +12,10 @@
     "build": "npm run build --workspaces --if-present",
     "build:foundry": "npm run build --workspace=packages/foundry-module",
     "build:server": "npm run build --workspace=packages/mcp-server",
+    "build:shared": "npm run build --workspace=shared",
+    "bundle:server": "npm run build:bundle --workspace=packages/mcp-server",
+    "build:release": "npm run build:shared && npm run build:server && npm run bundle:server && npm run build:foundry",
+    "installer:stage": "node installer/build-nsis.js --skip-download --skip-nsis",
     "test": "npm run test --workspaces --if-present",
     "lint": "eslint . --ext .ts,.js",
     "lint:fix": "eslint . --ext .ts,.js --fix",

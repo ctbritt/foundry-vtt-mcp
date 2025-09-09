@@ -1,369 +1,179 @@
 #!/usr/bin/env node
 
-// SINGLETON CHECK - Graceful MCP-compatible duplicate process handling  
-// This prevents Claude Desktop "Server disconnected" errors by handling duplicates properly
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-
-const LOCK_FILE = path.join(os.tmpdir(), 'foundry-mcp-server.lock');
-let isDuplicateProcess = false;
-
-// Create cross-platform log directory
-const LOG_DIR = process.env.FOUNDRY_LOG_DIR || path.join(os.tmpdir(), 'foundry-mcp-server');
-try {
-  fs.mkdirSync(LOG_DIR, { recursive: true });
-} catch (err) {
-  // Continue without logging if directory creation fails
-  console.error(`[WARNING] Cannot create log directory: ${LOG_DIR}`);
-}
-
-const ERROR_LOG_PATH = path.join(LOG_DIR, 'mcp-server-error.log');
-const MAIN_LOG_PATH = path.join(LOG_DIR, 'mcp-server.log');
-
-// Check if we're a duplicate process
-try {
-  fs.writeFileSync(LOCK_FILE, process.pid.toString(), { flag: 'wx' });
-  // Success - we got the lock, continue with normal execution
-  process.on('exit', () => {
-    try { fs.unlinkSync(LOCK_FILE); } catch (e) { /* ignore */ }
-  });
-} catch (error: any) {
-  if (error.code === 'EEXIST') {
-    // Lock exists - check if process is still alive
-    try {
-      const existingPid = parseInt(fs.readFileSync(LOCK_FILE, 'utf8'));
-      try {
-        process.kill(existingPid, 0); // Check if process exists
-        // Process exists - we're duplicate, but handle gracefully for Claude Desktop
-        isDuplicateProcess = true;
-      } catch (killError) {
-        // Process dead - remove stale lock and try again
-        fs.unlinkSync(LOCK_FILE);
-        fs.writeFileSync(LOCK_FILE, process.pid.toString(), { flag: 'wx' });
-        process.on('exit', () => {
-          try { fs.unlinkSync(LOCK_FILE); } catch (e) { /* ignore */ }
-        });
-      }
-    } catch (readError) {
-      // Can't read lock file - mark as duplicate to be safe
-      isDuplicateProcess = true;
-    }
-  } else {
-    // Other error - mark as duplicate to be safe
-    isDuplicateProcess = true;
-  }
-}
-
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { config } from './config.js';
-import { Logger } from './logger.js';
-import { FoundryClient } from './foundry-client.js';
-import { CharacterTools } from './tools/character.js';
-import { CompendiumTools } from './tools/compendium.js';
-import { SceneTools } from './tools/scene.js';
-import { ActorCreationTools } from './tools/actor-creation.js';
-import { QuestCreationTools } from './tools/quest-creation.js';
-import { DiceRollTools } from './tools/dice-roll.js';
-import { CampaignManagementTools } from './tools/campaign-management.js';
-import { OwnershipTools } from './tools/ownership.js';
+import { spawn } from 'child_process';
+import * as net from 'net';
+import { fileURLToPath } from 'url';
+import * as os from 'os';
+import * as fs from 'fs';
+import * as path from 'path';
 
-// Utility to log errors and exit gracefully without corrupting stdio
-async function logAndExit(logger: Logger, message: string, error: any): Promise<never> {
-  try {
-    logger.error(message, error);
-  } catch (logErr) {
-    // Last resort: write directly to file if logger fails
-    const fs = await import('fs');
-    const errorLog = `${new Date().toISOString()} ${message}: ${error?.stack || error}\n`;
+const CONTROL_HOST = '127.0.0.1';
+const CONTROL_PORT = 31414;
+
+type BackendReq = { id: string; method: string; params?: any };
+type BackendRes = { id: string; result?: any; error?: { message: string } };
+
+class BackendClient {
+  private socket: net.Socket | null = null;
+  private buffer = '';
+  private pending = new Map<string, { resolve: (v: any) => void; reject: (e: any) => void }>();
+  private logFile = path.join(os.tmpdir(), 'foundry-mcp-server', 'wrapper.log');
+
+  private log(msg: string, meta?: any) {
     try {
-      fs.appendFileSync(ERROR_LOG_PATH, errorLog);
-    } catch (fsErr) {
-      // If we can't even write to file, nothing we can do
-    }
+      const dir = path.dirname(this.logFile);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const line = `[${new Date().toISOString()}] ${msg}${meta ? ' ' + JSON.stringify(meta) : ''}\n`;
+      fs.appendFileSync(this.logFile, line);
+    } catch {}
   }
-  // Give logger time to flush before exiting
-  setTimeout(() => process.exit(1), 100);
-  
-  // TypeScript requires this for never return type
-  return new Promise(() => {}) as never;
-}
 
-// Initialize logger - disable console for MCP mode to avoid JSON parsing errors
-const logger = new Logger({
-  level: 'info', // Production level
-  format: config.logFormat,
-  enableConsole: false, // Disabled for MCP stdio communication
-  enableFile: process.env.FOUNDRY_DISABLE_LOGGING !== 'true', // Allow disabling file logging
-  filePath: MAIN_LOG_PATH,
-});
-
-// Initialize Foundry client
-const foundryClient = new FoundryClient(config.foundry, logger);
-
-// Initialize tool handlers
-const characterTools = new CharacterTools({ foundryClient, logger });
-const compendiumTools = new CompendiumTools({ foundryClient, logger });
-const sceneTools = new SceneTools({ foundryClient, logger });
-const actorCreationTools = new ActorCreationTools({ foundryClient, logger });
-const questCreationTools = new QuestCreationTools({ foundryClient, logger });
-const diceRollTools = new DiceRollTools({ foundryClient, logger });
-const campaignManagementTools = new CampaignManagementTools(foundryClient, logger);
-const ownershipTools = new OwnershipTools({ foundryClient, logger });
-
-// Create MCP server
-const server = new Server(
-  {
-    name: config.server.name,
-    version: config.server.version,
-  },
-  {
-    capabilities: {
-      tools: {},
-    },
+  async ensure(): Promise<void> {
+    if (this.socket && !this.socket.destroyed) return;
+    this.log('ensure(): connecting to backend');
+    await this.connectWithRetry();
   }
-);
 
-// Collect all tool definitions
-const allTools = [
-  ...characterTools.getToolDefinitions(),
-  ...compendiumTools.getToolDefinitions(),
-  ...sceneTools.getToolDefinitions(),
-  ...actorCreationTools.getToolDefinitions(),
-  ...questCreationTools.getToolDefinitions(),
-  ...diceRollTools.getToolDefinitions(),
-  ...campaignManagementTools.getToolDefinitions(),
-  ...ownershipTools.getToolDefinitions(),
-];
-
-// Register tool list handler
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  logger.debug('Listing available tools');
-  return { tools: allTools };
-});
-
-// Register tool execution handler
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
-  
-  // Reduced logging for performance - only log tool name
-
-  try {
-    // Check connection status without excessive reconnection attempts
-    if (!foundryClient.isReady()) {
-      logger.debug('Foundry not connected for tool execution');
-      // Don't attempt reconnection on every tool call - this causes lag
-      // Connection should be established during startup
-    }
-
-    let result: any;
-
-    // Route to appropriate tool handler
-    switch (name) {
-      // Character tools
-      case 'get-character':
-        result = await characterTools.handleGetCharacter(args);
-        break;
-      case 'list-characters':
-        result = await characterTools.handleListCharacters(args);
-        break;
-
-      // Compendium tools
-      case 'search-compendium':
-        result = await compendiumTools.handleSearchCompendium(args);
-        break;
-      case 'get-compendium-item':
-        result = await compendiumTools.handleGetCompendiumItem(args);
-        break;
-      case 'list-creatures-by-criteria':
-        result = await compendiumTools.handleListCreaturesByCriteria(args);
-        break;
-      case 'list-compendium-packs':
-        result = await compendiumTools.handleListCompendiumPacks(args);
-        break;
-
-      // Scene tools
-      case 'get-current-scene':
-        result = await sceneTools.handleGetCurrentScene(args);
-        break;
-      case 'get-world-info':
-        result = await sceneTools.handleGetWorldInfo(args);
-        break;
-
-      // Phase 2: Actor creation tools
-      case 'create-actor-from-compendium':
-        result = await actorCreationTools.handleCreateActorFromCompendium(args);
-        break;
-      case 'get-compendium-entry-full':
-        result = await actorCreationTools.handleGetCompendiumEntryFull(args);
-        break;
-
-      // Phase 3: Quest creation tools
-      case 'create-quest-journal':
-        result = await questCreationTools.handleCreateQuestJournal(args);
-        break;
-      case 'link-quest-to-npc':
-        result = await questCreationTools.handleLinkQuestToNPC(args);
-        break;
-      case 'update-quest-journal':
-        result = await questCreationTools.handleUpdateQuestJournal(args);
-        break;
-      case 'list-journals':
-        result = await questCreationTools.handleListJournals(args);
-        break;
-      case 'search-journals':
-        result = await questCreationTools.handleSearchJournals(args);
-        break;
-
-      // Phase 4: Dice roll tools
-      case 'request-player-rolls':
-        result = await diceRollTools.handleRequestPlayerRolls(args);
-        break;
-
-      // Phase 5: Campaign management tools
-      case 'create-campaign-dashboard':
-        result = await campaignManagementTools.handleCreateCampaignDashboard(args);
-        break;
-
-      // Phase 6: Actor ownership management tools
-      case 'assign-actor-ownership':
-        result = await ownershipTools.handleToolCall('assign-actor-ownership', args);
-        break;
-      case 'remove-actor-ownership':
-        result = await ownershipTools.handleToolCall('remove-actor-ownership', args);
-        break;
-      case 'list-actor-ownership':
-        result = await ownershipTools.handleToolCall('list-actor-ownership', args);
-        break;
-
-      default:
-        throw new Error(`Unknown tool: ${name}`);
-    }
-
-    // Tool execution completed successfully - only log errors/warnings
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: typeof result === 'string' ? result : JSON.stringify(result),
-        },
-      ],
-    };
-
-  } catch (error) {
-    logger.error('Tool execution failed', error);
-    
-    // Return error in a format Claude can understand
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Error: ${errorMessage}`,
-        },
-      ],
-      isError: true,
-    };
-  }
-});
-
-async function main(): Promise<void> {
-  logger.info('Starting Foundry MCP Server', {
-    version: config.server.version,
-    foundryHost: config.foundry.host,
-    foundryPort: config.foundry.port,
-  });
-  
-  try {
-    // Start MCP server first (don't require Foundry connection)
-    logger.info('Starting MCP server...');
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
-    
-    logger.info('MCP server started successfully', {
-      toolsAvailable: allTools.length,
+  private connect(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const sock = net.createConnection({ host: CONTROL_HOST, port: CONTROL_PORT }, () => {
+        this.socket = sock;
+        sock.setEncoding('utf8');
+        sock.on('data', (chunk: string) => this.onData(chunk));
+        sock.on('error', (err) => this.rejectAll(err));
+        sock.on('close', () => this.rejectAll(new Error('Backend disconnected')));
+        this.log('connect(): connected to backend');
+        resolve();
+      });
+      sock.on('error', (e) => { this.log('connect(): error', { error: (e as any)?.message }); reject(e); });
     });
+  }
 
+  private async connectWithRetry(): Promise<void> {
+    try {
+      await this.connect();
+      return;
+    } catch {
+      this.log('connectWithRetry(): starting backend');
+      await this.startBackend();
+      for (let i = 0; i < 15; i++) {
+        try {
+          await new Promise((r) => setTimeout(r, 150));
+          await this.connect();
+          return;
+        } catch {}
+      }
+      throw new Error('Unable to connect to Foundry MCP backend');
+    }
+  }
 
-    // Start WebSocket server for Foundry VTT (non-blocking)
-    foundryClient.connect().catch(() => {
-      // Silent failure - WebSocket server will be available when needed
+  private startBackend(): Promise<void> {
+    return new Promise(async (resolve) => {
+      let backendPath: string | null = null;
+      try {
+        const backendUrl = new URL('./backend.js', import.meta.url as any);
+        backendPath = fileURLToPath(backendUrl);
+      } catch {
+        const pathMod = await import('path');
+        const fsMod = await import('fs');
+        const baseDir = typeof __dirname !== 'undefined'
+          ? __dirname
+          : pathMod.dirname((process.argv && process.argv[1]) || process.cwd());
+        // Prefer bundled backend when present (contains deps), fallback to ESM
+        const bundleCandidate = pathMod.join(baseDir, 'backend.bundle.cjs');
+        const jsCandidate = pathMod.join(baseDir, 'backend.js');
+        backendPath = fsMod.existsSync(bundleCandidate) ? bundleCandidate : jsCandidate;
+      }
+      this.log('startBackend(): spawning', { path: backendPath });
+      const child = spawn(process.execPath, [backendPath!], { detached: true, stdio: 'ignore' });
+      child.unref();
+      resolve();
     });
+  }
 
-  } catch (error) {
-    await logAndExit(logger, 'Failed to start server', error);
+  private onData(chunk: string) {
+    this.buffer += chunk;
+    let idx: number;
+    while ((idx = this.buffer.indexOf('\n')) >= 0) {
+      const line = this.buffer.slice(0, idx).trim();
+      this.buffer = this.buffer.slice(idx + 1);
+      if (!line) continue;
+      try {
+        const msg = JSON.parse(line) as BackendRes;
+        const p = this.pending.get(msg.id);
+        if (!p) continue;
+        this.pending.delete(msg.id);
+        if (msg.error) p.reject(new Error(msg.error.message));
+        else p.resolve(msg.result);
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  private rejectAll(err: any) {
+    for (const [, p] of this.pending) p.reject(err);
+    this.pending.clear();
+    this.socket = null;
+  }
+
+  send(method: string, params: any): Promise<any> {
+    return new Promise(async (resolve, reject) => {
+      try {
+        await this.ensure();
+      } catch (e) {
+        this.log('send(): ensure failed', { error: (e as any)?.message });
+        return reject(e);
+      }
+      const id = Math.random().toString(36).slice(2);
+      const req: BackendReq = { id, method, params };
+      this.pending.set(id, { resolve, reject });
+      try {
+        this.log('send(): write', { method });
+        this.socket!.write(JSON.stringify(req) + '\n', 'utf8');
+      } catch (e) {
+        this.pending.delete(id);
+        this.log('send(): write error', { error: (e as any)?.message });
+        reject(e);
+      }
+    });
   }
 }
 
-// Graceful shutdown handlers
-process.on('SIGINT', async () => {
-  logger.info('Received SIGINT, shutting down gracefully...');
-  await shutdown();
-});
+async function startWrapper() {
+  const backend = new BackendClient();
+  const mcp = new Server({ name: config.server.name, version: config.server.version }, { capabilities: { tools: {} } });
 
-process.on('SIGTERM', async () => {
-  logger.info('Received SIGTERM, shutting down gracefully...');
-  await shutdown();
-});
-
-async function shutdown(): Promise<void> {
-  try {
-    logger.info('Disconnecting from Foundry VTT...');
-    foundryClient.disconnect();
-    logger.info('Shutdown complete');
-    process.exit(0);
-  } catch (error) {
-    await logAndExit(logger, 'Error during shutdown', error);
-  }
-}
-
-// Handle uncaught errors
-process.on('uncaughtException', async (error) => {
-  await logAndExit(logger, 'Uncaught exception', error);
-});
-
-process.on('unhandledRejection', async (reason, promise) => {
-  await logAndExit(logger, 'Unhandled rejection', { reason, promise });
-});
-
-// Handle duplicate processes gracefully for Claude Desktop compatibility
-if (isDuplicateProcess) {
-  console.error(`[SINGLETON] Duplicate process ${process.pid} - will provide minimal MCP response and exit gracefully`);
-  
-  // Start a minimal MCP server that responds to basic protocol but does nothing
-  const duplicateServer = new Server(
-    { name: 'foundry-mcp-duplicate', version: '0.0.1' },
-    { capabilities: { tools: {} } }
-  );
-  
-  // Handle basic protocol requirements
-  duplicateServer.setRequestHandler(ListToolsRequestSchema, async () => {
-    return { tools: [] }; // Empty tools list
+  mcp.setRequestHandler(ListToolsRequestSchema, async () => {
+    try {
+      const res = await backend.send('list_tools', {});
+      return { tools: res.tools || [] };
+    } catch {
+      // Log but return empty to remain MCP-compliant
+      try { (backend as any).log?.('ListTools failed; returning empty'); } catch {}
+      return { tools: [] };
+    }
   });
-  
-  // Start minimal server and exit gracefully after a short delay
+
+  mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params as any;
+    try {
+      const res = await backend.send('call_tool', { name, args: args ?? {} });
+      return res;
+    } catch (e: any) {
+      return { content: [{ type: 'text', text: `Error: ${e?.message || 'Backend unavailable'}` }], isError: true } as any;
+    }
+  });
+
   const transport = new StdioServerTransport();
-  duplicateServer.connect(transport).then(() => {
-    console.error(`[SINGLETON] Duplicate process ${process.pid} connected, will exit after 1 second`);
-    setTimeout(() => {
-      console.error(`[SINGLETON] Duplicate process ${process.pid} exiting gracefully`);
-      process.exit(0);
-    }, 1000);
-  }).catch(() => {
-    // If connection fails, just exit
-    process.exit(0);
-  });
-} else {
-  // Normal process - continue with full initialization
-  console.error(`[SINGLETON] Process ${process.pid} continuing - singleton verified`);
-  logger.info(`MCP Server process started - PID: ${process.pid}, Args: ${JSON.stringify(process.argv)}`);
-
-  // Start the main server initialization
-  main().catch(async (error) => {
-    await logAndExit(logger, 'Unhandled error in main', error);
-  });
+  await mcp.connect(transport);
 }
+
+startWrapper().catch((err) => {
+  console.error('Wrapper failed:', err);
+  process.exit(1);
+});
