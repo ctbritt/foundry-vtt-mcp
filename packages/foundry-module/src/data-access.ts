@@ -3704,4 +3704,106 @@ export class FoundryDataAccess {
     }
   }
 
+  /**
+   * List all scenes with filtering options
+   */
+  async listScenes(options: { filter?: string; include_active_only?: boolean } = {}): Promise<any[]> {
+    this.validateFoundryState();
+
+    try {
+      let scenes = game.scenes?.contents || [];
+
+      // Filter by active only if requested
+      if (options.include_active_only) {
+        scenes = scenes.filter((scene: any) => scene.active);
+      }
+
+      // Filter by name if provided
+      if (options.filter) {
+        const filterLower = options.filter.toLowerCase();
+        scenes = scenes.filter((scene: any) =>
+          scene.name.toLowerCase().includes(filterLower)
+        );
+      }
+
+      // Map to consistent format
+      return scenes.map((scene: any) => ({
+        id: scene.id,
+        name: scene.name,
+        active: scene.active,
+        dimensions: {
+          width: scene.dimensions?.width || (scene as any).width || 0,
+          height: scene.dimensions?.height || (scene as any).height || 0
+        },
+        gridSize: scene.grid?.size || 100,
+        background: scene.background?.src || scene.img || '',
+        walls: scene.walls?.size || 0,
+        tokens: scene.tokens?.size || 0,
+        lighting: scene.lights?.size || 0,
+        sounds: scene.sounds?.size || 0,
+        navigation: scene.navigation || false
+      }));
+    } catch (error) {
+      throw new Error(`Failed to list scenes: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Switch to a different scene
+   */
+  async switchScene(options: { scene_identifier: string; optimize_view?: boolean }): Promise<any> {
+    this.validateFoundryState();
+
+    try {
+      // Find the target scene by ID or name
+      const scenes = game.scenes?.contents || [];
+      const targetScene = scenes.find((scene: any) =>
+        scene.id === options.scene_identifier ||
+        scene.name.toLowerCase() === options.scene_identifier.toLowerCase()
+      );
+
+      if (!targetScene) {
+        throw new Error(`Scene not found: "${options.scene_identifier}"`);
+      }
+
+      // Activate the scene
+      await targetScene.activate();
+
+      // Optimize view if requested (default true)
+      if (options.optimize_view !== false && typeof canvas !== 'undefined' && canvas?.scene) {
+        const dimensions = targetScene.dimensions || {
+          width: (targetScene as any).width || 0,
+          height: (targetScene as any).height || 0
+        };
+        const width = (dimensions as any).width || 0;
+        const height = (dimensions as any).height || 0;
+
+        if (width && height) {
+          // Center the view on the scene
+          await canvas.pan({
+            x: width / 2,
+            y: height / 2,
+            scale: Math.min(
+              (canvas as any).screenDimensions?.[0] / width || 1,
+              (canvas as any).screenDimensions?.[1] / height || 1,
+              1
+            )
+          });
+        }
+      }
+
+      return {
+        success: true,
+        sceneId: targetScene.id,
+        sceneName: targetScene.name,
+        dimensions: {
+          width: (targetScene.dimensions as any)?.width || (targetScene as any).width || 0,
+          height: (targetScene.dimensions as any)?.height || (targetScene as any).height || 0
+        }
+      };
+    } catch (error) {
+      throw new Error(`Failed to switch scene: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
 }

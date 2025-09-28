@@ -1,6 +1,6 @@
 {
   "name": "@foundry-mcp/module",
-  "version": "0.4.17",
+  "version": "0.5.0",
   "description": "Foundry VTT module for MCP bridge integration",
   "type": "module",
   "scripts": {
@@ -23,6 +23,8 @@
     "dist",
     "module.json",
     "lang",
-    "styles"
+    "styles",
+    "templates",
+    "generated-maps"
   ]
 }

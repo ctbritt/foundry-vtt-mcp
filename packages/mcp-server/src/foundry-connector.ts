@@ -67,7 +67,9 @@ export class FoundryConnector {
       ws.on('message', (data) => {
         try {
           const message = JSON.parse(data.toString());
-          this.handleMessage(message);
+          this.handleMessage(message).catch((error) => {
+            this.logger.error('Error handling WebSocket message', error);
+          });
         } catch (error) {
           this.logger.error('Failed to parse WebSocket message', error);
         }
@@ -130,14 +132,13 @@ export class FoundryConnector {
     this.logger.info('Foundry connector stopped');
   }
 
-  private handleMessage(message: any): void {
+  private async handleMessage(message: any): Promise<void> {
     if (message.type === 'mcp-response' && message.id) {
-      // Handle query response
       const pending = this.pendingQueries.get(message.id);
       if (pending) {
         clearTimeout(pending.timeout);
         this.pendingQueries.delete(message.id);
-        
+
         if (message.data.success) {
           this.logger.debug('Query response received', { id: message.id, hasData: !!message.data.data });
           pending.resolve(message.data.data);
@@ -146,18 +147,37 @@ export class FoundryConnector {
           pending.reject(new Error(message.data.error || 'Query failed'));
         }
       }
-    } else if (message.type === 'pong') {
-      // Handle ping response
+      return;
+    }
+
+    if (message.type === 'pong') {
       const pending = this.pendingQueries.get(message.id);
       if (pending) {
         clearTimeout(pending.timeout);
         this.pendingQueries.delete(message.id);
         pending.resolve(message.data);
       }
-    } else {
-      this.logger.debug('Received unknown message type', { type: message.type });
+      return;
     }
+
+    const comfyHandlers = (globalThis as any).backendComfyUIHandlers;
+    if (comfyHandlers?.handleMessage) {
+      this.logger.debug('Routing message to backend ComfyUI handlers', { type: message.type });
+      try {
+        await comfyHandlers.handleMessage(message);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        this.logger.error('Failed to forward message to backendComfyUIHandlers', {
+          type: message.type,
+          error: errorMessage
+        });
+      }
+      return;
+    }
+
+    this.logger.debug('Received unknown message type', { type: message.type });
   }
+
 
   async query(method: string, data?: any): Promise<any> {
     if (!this.foundrySocket || this.foundrySocket.readyState !== WebSocket.OPEN) {
@@ -185,6 +205,13 @@ export class FoundryConnector {
     });
   }
 
+  sendToFoundry(message: any): void {
+    if (!this.foundrySocket || this.foundrySocket.readyState !== WebSocket.OPEN) {
+      throw new Error('Not connected to Foundry VTT module');
+    }
+    this.foundrySocket.send(JSON.stringify(message));
+  }
+
   isConnected(): boolean {
     return this.isStarted && this.foundrySocket !== null && this.foundrySocket.readyState === WebSocket.OPEN;
   }
@@ -199,5 +226,29 @@ export class FoundryConnector {
         namespace: this.config.namespace
       }
     };
+  }
+
+  /**
+   * Send a message to the connected Foundry module
+   */
+  sendMessage(message: any): void {
+    if (!this.foundrySocket || this.foundrySocket.readyState !== WebSocket.OPEN) {
+      throw new Error('Not connected to Foundry VTT module');
+    }
+
+    try {
+      this.foundrySocket.send(JSON.stringify(message));
+      this.logger.debug('Sent message to Foundry module', { type: message.type });
+    } catch (error) {
+      this.logger.error('Failed to send message to Foundry module', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Broadcast a message to all connected Foundry clients (alias for sendMessage for single connection)
+   */
+  broadcastMessage(message: any): void {
+    this.sendMessage(message);
   }
 }

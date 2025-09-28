@@ -36,6 +36,9 @@
       "path": "./packages/mcp-server"
     },
     {
+      "path": "./packages/foundry-module"
+    },
+    {
       "path": "./shared"
     }
   ]

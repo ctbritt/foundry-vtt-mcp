@@ -18,6 +18,7 @@ node_modules/
 dist/
 build/
 *.tsbuildinfo
+**/*.tsbuildinfo
 
 # IDE Files
 .vscode/
@@ -33,6 +34,7 @@ build/
 .Trashes
 ehthumbs.db
 Thumbs.db
+nul
 
 # Logs
 logs
@@ -55,10 +57,20 @@ coverage/
 
 # Test Output
 test-results/
+*test-result*.txt
 
 # Installer Build Output
 installer/*.exe
 installer/temp/
+installer/*.zip
+
+# Executable Files (except in specific locations)
+*.exe
+!installer/build/*.exe
+!installer/nsis/*.exe
+
+# Temporary Scripts
+test-*.ps1
 
 # Local Configuration
 config.local.json

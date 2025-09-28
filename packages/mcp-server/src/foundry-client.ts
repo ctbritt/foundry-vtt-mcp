@@ -83,4 +83,18 @@ export class FoundryClient {
   isReady(): boolean {
     return this.connector.isConnected();
   }
+
+  sendMessage(message: any): void {
+    this.logger.debug('Sending message to Foundry', { type: message.type, requestId: message.requestId });
+    this.connector.sendToFoundry(message);
+  }
+
+  broadcastMessage(message: any): void {
+    this.logger.debug('Broadcasting message to Foundry', { type: message.type });
+    this.connector.broadcastMessage(message);
+  }
+
+  isConnected(): boolean {
+    return this.connector.isConnected();
+  }
 }
