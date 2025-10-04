@@ -236,6 +236,21 @@ export class ModuleSettings {
       onChange: this.onConnectionChange.bind(this),
     });
 
+    game.settings.register(this.moduleId, 'serverProtocol', {
+      name: 'WebSocket Protocol',
+      hint: 'Auto: Matches page protocol automatically. Local/HTTP: ws:// for localhost. Remote/HTTPS: wss:// for secure connections.',
+      scope: 'world',
+      config: true,
+      type: String,
+      choices: {
+        'auto': 'Auto',
+        'ws': 'Local/HTTP',
+        'wss': 'Remote/HTTPS'
+      },
+      default: 'auto',
+      onChange: this.onConnectionChange.bind(this),
+    });
+
 
     // ============================================================================
     // SECTION 2: WRITE PERMISSIONS
@@ -428,6 +443,8 @@ export class ModuleSettings {
    * Get current bridge configuration from settings
    */
   getBridgeConfig(): BridgeConfig {
+    const protocolSetting = this.getSetting('serverProtocol');
+
     return {
       enabled: this.getSetting('enabled'),
       serverHost: this.getSetting('serverHost'),
@@ -437,6 +454,7 @@ export class ModuleSettings {
       reconnectDelay: DEFAULT_CONFIG.RECONNECT_DELAY, // Use sensible default
       connectionTimeout: DEFAULT_CONFIG.CONNECTION_TIMEOUT, // Use sensible default
       debugLogging: false, // Always false - use browser console for debugging
+      protocol: protocolSetting as 'auto' | 'ws' | 'wss',
     };
   }
 
@@ -460,7 +478,7 @@ export class ModuleSettings {
   getAllSettings(): Record<string, any> {
     const settingKeys = [
       // Basic Settings
-      'enabled', 'serverHost', 'serverPort',
+      'enabled', 'serverHost', 'serverPort', 'serverProtocol',
       // Permissions
       'allowWriteOperations',
       // Safety Controls
@@ -574,7 +592,7 @@ export class ModuleSettings {
   async resetToDefaults(): Promise<void> {
     const settingKeys = [
       // Basic Settings
-      'enabled', 'serverHost', 'serverPort',
+      'enabled', 'serverHost', 'serverPort', 'serverProtocol',
       // Permissions
       'allowWriteOperations',
       // Safety Controls

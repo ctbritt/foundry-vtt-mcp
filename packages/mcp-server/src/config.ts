@@ -15,6 +15,16 @@ const ConfigSchema = z.object({
     reconnectAttempts: z.number().min(1).max(20).default(5),
     reconnectDelay: z.number().min(100).max(30000).default(1000),
     connectionTimeout: z.number().min(1000).max(60000).default(10000),
+    protocol: z.enum(['ws', 'wss']).default('ws'),
+    remoteMode: z.boolean().default(false),
+    dataPath: z.string().optional(), // Custom path for generated maps (remote mode)
+    rejectUnauthorized: z.boolean().default(true), // TLS certificate validation
+  }),
+  comfyui: z.object({
+    mode: z.enum(['local', 'remote', 'disabled']).default('local'),
+    remoteUrl: z.string().optional(), // Full URL like http://192.168.1.100:31411
+    remoteHost: z.string().default('127.0.0.1'),
+    remotePort: z.number().min(1024).max(65535).default(31411),
   }),
   server: z.object({
     name: z.string().default('foundry-mcp-server'),
@@ -36,6 +46,16 @@ const rawConfig = {
     reconnectAttempts: parseInt(process.env.FOUNDRY_RECONNECT_ATTEMPTS || '5', 10),
     reconnectDelay: parseInt(process.env.FOUNDRY_RECONNECT_DELAY || '1000', 10),
     connectionTimeout: parseInt(process.env.FOUNDRY_CONNECTION_TIMEOUT || '10000', 10),
+    protocol: (process.env.FOUNDRY_PROTOCOL || 'ws') as 'ws' | 'wss',
+    remoteMode: process.env.FOUNDRY_REMOTE_MODE === 'true',
+    dataPath: process.env.FOUNDRY_DATA_PATH,
+    rejectUnauthorized: process.env.FOUNDRY_REJECT_UNAUTHORIZED !== 'false',
+  },
+  comfyui: {
+    mode: (process.env.COMFYUI_MODE || 'local') as 'local' | 'remote' | 'disabled',
+    remoteUrl: process.env.COMFYUI_REMOTE_URL,
+    remoteHost: process.env.COMFYUI_REMOTE_HOST || '127.0.0.1',
+    remotePort: parseInt(process.env.COMFYUI_REMOTE_PORT || '31411', 10),
   },
   server: {
     name: process.env.SERVER_NAME || 'foundry-mcp-server',

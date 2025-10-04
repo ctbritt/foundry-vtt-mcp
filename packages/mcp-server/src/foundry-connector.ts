@@ -36,14 +36,16 @@ export class FoundryConnector {
     }
 
     this.logger.info('Starting Foundry connector WebSocket server', {
-      port: this.config.port
+      port: this.config.port,
+      protocol: this.config.protocol || 'ws',
+      remoteMode: this.config.remoteMode || false
     });
 
     // Create HTTP server for WebSocket upgrade
     this.httpServer = createServer();
-    
+
     // Create WebSocket server
-    this.wss = new WebSocketServer({ 
+    this.wss = new WebSocketServer({
       server: this.httpServer,
       path: this.config.namespace || '/'
     });

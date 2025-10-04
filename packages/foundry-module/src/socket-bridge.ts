@@ -9,6 +9,7 @@ export interface BridgeConfig {
   reconnectDelay: number;
   connectionTimeout: number;
   debugLogging: boolean;
+  protocol?: 'auto' | 'ws' | 'wss'; // WebSocket protocol: auto (matches page), ws (local), wss (remote)
 }
 
 /**
@@ -35,9 +36,23 @@ export class SocketBridge {
     this.connectionState = CONNECTION_STATES.CONNECTING;
     this.log('Connecting to MCP server...');
 
-    // Use WebSocket instead of socket.io
-    const wsUrl = `ws://${this.config.serverHost}:${this.config.serverPort}${this.config.namespace}`;
-    
+    // Determine WebSocket protocol
+    let protocol: 'ws' | 'wss';
+    const configProtocol = this.config.protocol || 'auto';
+
+    if (configProtocol === 'auto') {
+      // Auto-detect based on page protocol
+      const pageProtocol = window.location.protocol; // 'http:' or 'https:'
+      protocol = pageProtocol === 'https:' ? 'wss' : 'ws';
+      this.log(`Auto-detected protocol: ${protocol} (page is ${pageProtocol})`);
+    } else {
+      // Use explicit protocol from config
+      protocol = configProtocol as 'ws' | 'wss';
+      this.log(`Using configured protocol: ${protocol}`);
+    }
+
+    const wsUrl = `${protocol}://${this.config.serverHost}:${this.config.serverPort}${this.config.namespace}`;
+
     return new Promise((resolve, reject) => {
       const connectTimeout = setTimeout(() => {
         this.log('Connection timeout');

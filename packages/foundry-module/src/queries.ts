@@ -81,6 +81,7 @@ export class QueryHandlers {
     CONFIG.queries[`${modulePrefix}.generate-map`] = this.handleGenerateMap.bind(this);
     CONFIG.queries[`${modulePrefix}.check-map-status`] = this.handleCheckMapStatus.bind(this);
     CONFIG.queries[`${modulePrefix}.cancel-map-job`] = this.handleCancelMapJob.bind(this);
+    CONFIG.queries[`${modulePrefix}.upload-generated-map`] = this.handleUploadGeneratedMap.bind(this);
 
   }
 
@@ -952,6 +953,71 @@ export class QueryHandlers {
     } catch (error: any) {
       return {
         error: error.message,
+        success: false
+      };
+    }
+  }
+
+  /**
+   * Handle upload of generated map image (for remote Foundry instances)
+   * Receives base64-encoded image data and saves it to generated-maps folder
+   */
+  private async handleUploadGeneratedMap(data: any): Promise<any> {
+    try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
+      if (!data.filename || typeof data.filename !== 'string') {
+        throw new Error('Filename is required and must be a string');
+      }
+
+      if (!data.imageData || typeof data.imageData !== 'string') {
+        throw new Error('Image data is required and must be a base64 string');
+      }
+
+      // Validate filename for security (prevent path traversal)
+      const safeFilename = data.filename.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+      if (!safeFilename.endsWith('.png') && !safeFilename.endsWith('.jpg') && !safeFilename.endsWith('.jpeg')) {
+        throw new Error('Only PNG and JPEG images are supported');
+      }
+
+      // Convert base64 to Blob
+      const byteCharacters = atob(data.imageData);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'image/png' });
+
+      // Create a File object from the Blob
+      const file = new File([blob], safeFilename, { type: 'image/png' });
+
+      // Upload using Foundry's FilePicker.upload method
+      const response = await (globalThis as any).FilePicker.upload(
+        'data',
+        'modules/foundry-mcp-bridge/generated-maps',
+        file,
+        {},
+        { notify: false }
+      );
+
+      console.log(`[${MODULE_ID}] Uploaded generated map to:`, response.path);
+
+      return {
+        success: true,
+        path: response.path,
+        filename: safeFilename,
+        message: `Map uploaded successfully to ${response.path}`
+      };
+
+    } catch (error: any) {
+      console.error(`[${MODULE_ID}] Failed to upload generated map:`, error);
+      return {
+        error: error.message || 'Failed to upload generated map',
         success: false
       };
     }

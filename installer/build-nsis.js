@@ -16,7 +16,7 @@ const { execSync } = require('child_process');
 
 // Parse command line arguments
 const args = process.argv.slice(2);
-let version = 'v0.5.0'; // default version
+let version = 'v0.5.1'; // default version
 let skipDownload = false;
 let skipNsis = false;
 

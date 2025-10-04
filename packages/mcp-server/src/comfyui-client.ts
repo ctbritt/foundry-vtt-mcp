@@ -19,7 +19,7 @@ export interface ComfyUIJobResponse {
 }
 
 export interface ComfyUIConfig {
-  installPath?: string;
+  installPath?: string | undefined;
   host: string;
   port: number;
   pythonCommand: string;
@@ -46,26 +46,38 @@ export class ComfyUIClient {
   private baseUrl: string;
   private clientId: string;
 
-  constructor(options: { logger: Logger; config?: Partial<ComfyUIConfig> }) {
+  constructor(options: { logger: Logger; config?: Partial<ComfyUIConfig>; mode?: 'local' | 'remote' | 'disabled'; remoteUrl?: string }) {
     this.logger = options.logger.child({ component: 'ComfyUIClient' });
     this.clientId = `ai-maps-server-${Date.now()}`;
 
+    // Determine ComfyUI mode from options or environment
+    const mode = options.mode || 'local';
+    const isRemote = mode === 'remote';
+
     // Default configuration
     this.config = {
-      installPath: this.getDefaultInstallPath(),
+      installPath: isRemote ? undefined : this.getDefaultInstallPath(),
       host: '127.0.0.1',
       port: 31411,
       pythonCommand: 'python',
-      autoStart: true,
+      autoStart: !isRemote, // Don't auto-start in remote mode
       ...options.config
     };
 
-    this.baseUrl = `http://${this.config.host}:${this.config.port}`;
+    // Use remote URL if provided, otherwise construct from host/port
+    if (options.remoteUrl) {
+      this.baseUrl = options.remoteUrl;
+      this.logger.info('ComfyUI client configured for remote URL', { remoteUrl: options.remoteUrl });
+    } else {
+      this.baseUrl = `http://${this.config.host}:${this.config.port}`;
+    }
 
     this.logger.info('ComfyUI client initialized', {
+      mode,
       baseUrl: this.baseUrl,
       installPath: this.config.installPath,
-      clientId: this.clientId
+      clientId: this.clientId,
+      isRemote
     });
   }
 
@@ -148,6 +160,12 @@ export class ComfyUIClient {
   }
 
   async startService(): Promise<void> {
+    // Skip process spawning if no install path (remote mode)
+    if (!this.config.installPath) {
+      this.logger.info('ComfyUI in remote mode - skipping service start');
+      throw new Error('Cannot start ComfyUI service in remote mode. Ensure remote ComfyUI instance is running.');
+    }
+
     if (this.process && !this.process.killed) {
       this.logger.warn('ComfyUI service already running');
       return;
@@ -218,6 +236,12 @@ export class ComfyUIClient {
   }
 
   async stopService(): Promise<void> {
+    // Skip process management if no install path (remote mode)
+    if (!this.config.installPath) {
+      this.logger.info('ComfyUI in remote mode - skipping service stop');
+      return;
+    }
+
     if (!this.process || this.process.killed) {
       this.logger.warn('ComfyUI service is not running');
       return;

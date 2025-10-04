@@ -755,24 +755,56 @@ async function processMapGenerationInBackend(jobId: string, jobQueue: any, comfy
 
     await jobQueue.updateJobProgress(jobId, 90, 'Saving image...');
 
-    // Save image to Foundry-accessible location (like mapgen does)
+    // Save image to Foundry-accessible location
     const fs = await import('fs').then(m => m.promises);
     const path = await import('path');
     const os = await import('os');
 
     const timestamp = Date.now();
     const filename = `map_${jobId}_${timestamp}.png`;
+    let webPath: string;
 
-    // Save to Foundry's data directory (like working mapgen system)
-    const foundryDataDir = path.join(os.homedir(), 'AppData', 'Local', 'FoundryVTT', 'Data', 'modules', 'foundry-mcp-bridge', 'generated-maps');
-    const imagePath = path.join(foundryDataDir, filename);
-    const webPath = `modules/foundry-mcp-bridge/generated-maps/${filename}`;
+    // Check if Foundry is remote (use upload) or local (direct file write)
+    const isRemoteFoundry = config.foundry.remoteMode;
 
-    // Ensure directory exists
-    await fs.mkdir(foundryDataDir, { recursive: true });
+    if (isRemoteFoundry) {
+      logger.info('Remote Foundry mode detected - uploading image via WebSocket');
 
-    // Save the image
-    await fs.writeFile(imagePath, imageBuffer);
+      // Convert image buffer to base64 for transmission
+      const base64Image = imageBuffer.toString('base64');
+
+      // Upload to Foundry via WebSocket query
+      const uploadResult = await foundryClient.query('foundry-mcp-bridge.upload-generated-map', {
+        filename: filename,
+        imageData: base64Image
+      });
+
+      if (!uploadResult.success) {
+        throw new Error(`Failed to upload image to remote Foundry: ${uploadResult.error}`);
+      }
+
+      webPath = uploadResult.path;
+      logger.info('Image uploaded successfully to remote Foundry', { path: webPath });
+
+    } else {
+      logger.info('Local Foundry mode - saving image to local filesystem');
+
+      // Use custom data path if configured, otherwise default
+      const foundryDataDir = config.foundry.dataPath || path.join(
+        os.homedir(),
+        'AppData', 'Local', 'FoundryVTT', 'Data', 'modules', 'foundry-mcp-bridge', 'generated-maps'
+      );
+
+      const imagePath = path.join(foundryDataDir, filename);
+      webPath = `modules/foundry-mcp-bridge/generated-maps/${filename}`;
+
+      // Ensure directory exists
+      await fs.mkdir(foundryDataDir, { recursive: true });
+
+      // Save the image
+      await fs.writeFile(imagePath, imageBuffer);
+      logger.info('Image saved to local filesystem', { path: imagePath });
+    }
 
     await jobQueue.updateJobProgress(jobId, 95, 'Creating scene data...');
 
@@ -918,9 +950,32 @@ async function startBackend(): Promise<void> {
     const { ComfyUIClient } = await import('./comfyui-client.js');
 
     mapGenerationJobQueue = new JobQueue({ logger });
-    mapGenerationComfyUIClient = new ComfyUIClient({ logger });
 
-    logger.info('Map generation backend components initialized');
+    // Initialize ComfyUI client with mode from config
+    const comfyuiMode = config.comfyui?.mode || 'local';
+    let comfyuiRemoteUrl: string | undefined = undefined;
+
+    if (config.comfyui?.remoteUrl) {
+      comfyuiRemoteUrl = config.comfyui.remoteUrl;
+    } else if (config.comfyui?.mode === 'remote') {
+      comfyuiRemoteUrl = `http://${config.comfyui.remoteHost}:${config.comfyui.remotePort}`;
+    }
+
+    const clientOptions: any = {
+      logger,
+      mode: comfyuiMode
+    };
+
+    if (comfyuiRemoteUrl !== undefined) {
+      clientOptions.remoteUrl = comfyuiRemoteUrl;
+    }
+
+    mapGenerationComfyUIClient = new ComfyUIClient(clientOptions);
+
+    logger.info('Map generation backend components initialized', {
+      comfyuiMode,
+      comfyuiRemoteUrl
+    });
   } catch (error) {
     logger.warn('Failed to initialize map generation components', { error });
   }
