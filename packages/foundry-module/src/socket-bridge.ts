@@ -1,4 +1,5 @@
 import { MODULE_ID, CONNECTION_STATES } from './constants.js';
+import { WebRTCConnection, type WebRTCConfig } from './webrtc-connection.js';
 
 export interface BridgeConfig {
   enabled: boolean;
@@ -9,26 +10,27 @@ export interface BridgeConfig {
   reconnectDelay: number;
   connectionTimeout: number;
   debugLogging: boolean;
-  protocol?: 'auto' | 'ws' | 'wss'; // WebSocket protocol: auto (matches page), ws (local), wss (remote)
+  connectionType?: 'auto' | 'webrtc' | 'websocket'; // Connection type: auto (HTTPS→WebRTC, HTTP→WebSocket), webrtc, websocket
 }
 
 /**
- * Browser-compatible socket bridge that uses native WebSocket and fetch
- * instead of socket.io-client which doesn't work in Foundry VTT
+ * Browser-compatible socket bridge that supports both WebSocket and WebRTC
  */
 export class SocketBridge {
   private ws: WebSocket | null = null;
+  private webrtc: WebRTCConnection | null = null;
   private connectionState: string = CONNECTION_STATES.DISCONNECTED;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectTimer: any = null;
+  private activeConnectionType: 'websocket' | 'webrtc' | null = null;
 
   constructor(private config: BridgeConfig) {
     this.maxReconnectAttempts = config.reconnectAttempts;
   }
 
   async connect(): Promise<void> {
-    if (this.connectionState === CONNECTION_STATES.CONNECTED || 
+    if (this.connectionState === CONNECTION_STATES.CONNECTED ||
         this.connectionState === CONNECTION_STATES.CONNECTING) {
       return;
     }
@@ -36,20 +38,68 @@ export class SocketBridge {
     this.connectionState = CONNECTION_STATES.CONNECTING;
     this.log('Connecting to MCP server...');
 
-    // Determine WebSocket protocol
-    let protocol: 'ws' | 'wss';
-    const configProtocol = this.config.protocol || 'auto';
+    // Determine connection type
+    const connectionType = this.determineConnectionType();
+    this.log(`Using connection type: ${connectionType}`);
 
-    if (configProtocol === 'auto') {
+    if (connectionType === 'webrtc') {
+      await this.connectWebRTC();
+    } else {
+      await this.connectWebSocket();
+    }
+  }
+
+  private determineConnectionType(): 'websocket' | 'webrtc' {
+    const configType = this.config.connectionType || 'auto';
+
+    if (configType === 'auto') {
       // Auto-detect based on page protocol
       const pageProtocol = window.location.protocol; // 'http:' or 'https:'
-      protocol = pageProtocol === 'https:' ? 'wss' : 'ws';
-      this.log(`Auto-detected protocol: ${protocol} (page is ${pageProtocol})`);
-    } else {
-      // Use explicit protocol from config
-      protocol = configProtocol as 'ws' | 'wss';
-      this.log(`Using configured protocol: ${protocol}`);
+      const detectedType = pageProtocol === 'https:' ? 'webrtc' : 'websocket';
+      this.log(`Auto-detected connection type: ${detectedType} (page is ${pageProtocol})`);
+      return detectedType;
     }
+
+    // Use explicit connection type from config
+    return configType as 'websocket' | 'webrtc';
+  }
+
+  private async connectWebRTC(): Promise<void> {
+    this.activeConnectionType = 'webrtc';
+
+    const webrtcConfig: WebRTCConfig = {
+      serverHost: this.config.serverHost,
+      serverPort: this.config.serverPort,
+      namespace: this.config.namespace,
+      stunServers: [
+        'stun:stun.l.google.com:19302',
+        'stun:stun1.l.google.com:19302'
+      ],
+      connectionTimeout: this.config.connectionTimeout,
+      debugLogging: this.config.debugLogging
+    };
+
+    this.webrtc = new WebRTCConnection(webrtcConfig);
+
+    try {
+      await this.webrtc.connect(this.handleMessage.bind(this));
+      this.connectionState = CONNECTION_STATES.CONNECTED;
+      this.reconnectAttempts = 0;
+      this.log('Connected via WebRTC');
+    } catch (error) {
+      this.log(`WebRTC connection failed: ${error}`);
+      this.connectionState = CONNECTION_STATES.DISCONNECTED;
+      this.scheduleReconnect();
+      throw error;
+    }
+  }
+
+  private async connectWebSocket(): Promise<void> {
+    this.activeConnectionType = 'websocket';
+
+    // WebSocket mode is for localhost only, always use ws://
+    const protocol = 'ws';
+    this.log('Using WebSocket (localhost only)');
 
     const wsUrl = `${protocol}://${this.config.serverHost}:${this.config.serverPort}${this.config.namespace}`;
 
@@ -67,7 +117,7 @@ export class SocketBridge {
           clearTimeout(connectTimeout);
           this.connectionState = CONNECTION_STATES.CONNECTED;
           this.reconnectAttempts = 0;
-          this.log('Connected to MCP server');
+          this.log('Connected to MCP server via WebSocket');
           this.setupEventHandlers();
           resolve();
         };
@@ -76,7 +126,7 @@ export class SocketBridge {
           clearTimeout(connectTimeout);
           // Use more informative message for connection failures
           const isFirstAttempt = this.reconnectAttempts === 0;
-          const errorMsg = isFirstAttempt ? 
+          const errorMsg = isFirstAttempt ?
             'MCP server not available (this is normal if server isn\'t running)' :
             `Connection error after ${this.reconnectAttempts} attempts: ${error}`;
           this.log(errorMsg);
@@ -88,12 +138,12 @@ export class SocketBridge {
         this.ws.onclose = (event) => {
           this.log(`Disconnected: ${event.reason || 'Connection closed'}`);
           this.connectionState = CONNECTION_STATES.DISCONNECTED;
-          
+
           if (event.wasClean) {
             // Clean disconnect, don't reconnect
             return;
           }
-          
+
           this.scheduleReconnect();
         };
 
@@ -112,11 +162,17 @@ export class SocketBridge {
       this.reconnectTimer = null;
     }
 
+    if (this.webrtc) {
+      this.webrtc.disconnect();
+      this.webrtc = null;
+    }
+
     if (this.ws) {
       this.ws.close(1000, 'Manual disconnect');
       this.ws = null;
     }
 
+    this.activeConnectionType = null;
     this.connectionState = CONNECTION_STATES.DISCONNECTED;
     this.log('Disconnected from MCP server');
   }
@@ -370,14 +426,21 @@ export class SocketBridge {
   }
 
   private sendMessage(message: any): void {
-    if (!this.ws || this.connectionState !== CONNECTION_STATES.CONNECTED) {
+    if (this.connectionState !== CONNECTION_STATES.CONNECTED) {
       this.log(`Cannot send message - not connected`);
       return;
     }
 
     try {
-      this.ws.send(JSON.stringify(message));
-      this.log(`Sent message: ${message.type}`);
+      if (this.activeConnectionType === 'webrtc' && this.webrtc) {
+        this.webrtc.sendMessage(message);
+      } else if (this.activeConnectionType === 'websocket' && this.ws) {
+        this.ws.send(JSON.stringify(message));
+      } else {
+        this.log('No active connection to send message');
+        return;
+      }
+      this.log(`Sent message via ${this.activeConnectionType}: ${message.type}`);
     } catch (error) {
       this.log(`Failed to send message: ${error}`);
     }

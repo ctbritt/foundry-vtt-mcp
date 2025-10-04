@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from 'http';
 import { Logger } from './logger.js';
 import { Config } from './config.js';
+import { WebRTCPeer } from './webrtc-peer.js';
 
 export interface FoundryConnectorOptions {
   config: Config['foundry'];
@@ -21,6 +22,8 @@ export class FoundryConnector {
   private config: Config['foundry'];
   private isStarted = false;
   private foundrySocket: WebSocket | null = null;
+  private webrtcPeer: WebRTCPeer | null = null;
+  private activeConnectionType: 'websocket' | 'webrtc' | null = null;
   private pendingQueries = new Map<string, PendingQuery>();
   private queryIdCounter = 0;
 
@@ -50,35 +53,47 @@ export class FoundryConnector {
       path: this.config.namespace || '/'
     });
 
-    // Handle WebSocket connections
+    // Handle WebSocket connections (both signaling and direct WebSocket)
     this.wss.on('connection', (ws) => {
-      this.logger.info('Foundry module connected via WebSocket');
-      this.foundrySocket = ws;
+      this.logger.info('Client connected via WebSocket');
 
       ws.on('close', () => {
-        this.logger.info('Foundry module disconnected');
-        this.foundrySocket = null;
-        // Reject all pending queries
-        this.pendingQueries.forEach(({ reject, timeout }) => {
-          clearTimeout(timeout);
-          reject(new Error('Connection closed'));
-        });
-        this.pendingQueries.clear();
+        this.logger.info('Client disconnected');
+        if (this.activeConnectionType === 'websocket') {
+          this.foundrySocket = null;
+          this.activeConnectionType = null;
+          // Reject all pending queries
+          this.pendingQueries.forEach(({ reject, timeout }) => {
+            clearTimeout(timeout);
+            reject(new Error('Connection closed'));
+          });
+          this.pendingQueries.clear();
+        }
       });
 
-      ws.on('message', (data) => {
+      ws.on('message', async (data) => {
         try {
           const message = JSON.parse(data.toString());
-          this.handleMessage(message).catch((error) => {
-            this.logger.error('Error handling WebSocket message', error);
-          });
+
+          // Check if this is WebRTC signaling
+          if (message.type === 'webrtc-offer') {
+            await this.handleWebRTCOffer(message.offer, ws);
+          } else {
+            // Regular WebSocket message
+            if (!this.foundrySocket) {
+              this.foundrySocket = ws;
+              this.activeConnectionType = 'websocket';
+              this.logger.info('Foundry module connected via WebSocket (direct)');
+            }
+            await this.handleMessage(message);
+          }
         } catch (error) {
-          this.logger.error('Failed to parse WebSocket message', error);
+          this.logger.error('Failed to parse message', error);
         }
       });
 
       ws.on('error', (error) => {
-        this.logger.error('WebSocket error from Foundry module', error);
+        this.logger.error('WebSocket error', error);
       });
     });
 
@@ -180,6 +195,42 @@ export class FoundryConnector {
     this.logger.debug('Received unknown message type', { type: message.type });
   }
 
+  private async handleWebRTCOffer(offer: any, signalingWs: WebSocket): Promise<void> {
+    try {
+      this.logger.info('Handling WebRTC offer for signaling');
+
+      // Create WebRTC peer
+      this.webrtcPeer = new WebRTCPeer({
+        config: this.config.webrtc,
+        logger: this.logger,
+        onMessage: this.handleMessage.bind(this)
+      });
+
+      // Handle offer and get answer
+      const answer = await this.webrtcPeer.handleOffer(offer);
+
+      // Send answer back via signaling WebSocket
+      signalingWs.send(JSON.stringify({
+        type: 'webrtc-answer',
+        answer: answer
+      }));
+
+      this.activeConnectionType = 'webrtc';
+      this.logger.info('WebRTC connection established');
+
+      // Close signaling WebSocket after handshake
+      setTimeout(() => {
+        signalingWs.close();
+      }, 1000);
+
+    } catch (error) {
+      this.logger.error('Failed to handle WebRTC offer', error);
+      signalingWs.send(JSON.stringify({
+        type: 'webrtc-error',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
+  }
 
   async query(method: string, data?: any): Promise<any> {
     if (!this.foundrySocket || this.foundrySocket.readyState !== WebSocket.OPEN) {
@@ -208,14 +259,25 @@ export class FoundryConnector {
   }
 
   sendToFoundry(message: any): void {
-    if (!this.foundrySocket || this.foundrySocket.readyState !== WebSocket.OPEN) {
+    if (this.activeConnectionType === 'webrtc' && this.webrtcPeer) {
+      this.webrtcPeer.sendMessage(message);
+    } else if (this.activeConnectionType === 'websocket' && this.foundrySocket && this.foundrySocket.readyState === WebSocket.OPEN) {
+      this.foundrySocket.send(JSON.stringify(message));
+    } else {
       throw new Error('Not connected to Foundry VTT module');
     }
-    this.foundrySocket.send(JSON.stringify(message));
   }
 
   isConnected(): boolean {
-    return this.isStarted && this.foundrySocket !== null && this.foundrySocket.readyState === WebSocket.OPEN;
+    if (!this.isStarted) return false;
+
+    if (this.activeConnectionType === 'webrtc') {
+      return this.webrtcPeer !== null && this.webrtcPeer.getIsConnected();
+    } else if (this.activeConnectionType === 'websocket') {
+      return this.foundrySocket !== null && this.foundrySocket.readyState === WebSocket.OPEN;
+    }
+
+    return false;
   }
 
   getConnectionInfo(): any {

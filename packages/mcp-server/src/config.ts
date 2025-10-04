@@ -15,10 +15,26 @@ const ConfigSchema = z.object({
     reconnectAttempts: z.number().min(1).max(20).default(5),
     reconnectDelay: z.number().min(100).max(30000).default(1000),
     connectionTimeout: z.number().min(1000).max(60000).default(10000),
-    protocol: z.enum(['ws', 'wss']).default('ws'),
+    connectionType: z.enum(['websocket', 'webrtc', 'auto']).default('auto'),
+    protocol: z.enum(['ws', 'wss']).default('ws'), // Legacy, used only for WebSocket mode
     remoteMode: z.boolean().default(false),
     dataPath: z.string().optional(), // Custom path for generated maps (remote mode)
     rejectUnauthorized: z.boolean().default(true), // TLS certificate validation
+    // WebRTC configuration
+    webrtc: z.object({
+      stunServers: z.array(z.string()).default([
+        'stun:stun.l.google.com:19302',
+        'stun:stun1.l.google.com:19302'
+      ]),
+      // Future: TURN servers support
+      // turnServers: z.array(z.object({
+      //   urls: z.string(),
+      //   username: z.string().optional(),
+      //   credential: z.string().optional()
+      // })).optional()
+    }).default({
+      stunServers: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']
+    })
   }),
   comfyui: z.object({
     mode: z.enum(['local', 'remote', 'disabled']).default('local'),
@@ -46,10 +62,16 @@ const rawConfig = {
     reconnectAttempts: parseInt(process.env.FOUNDRY_RECONNECT_ATTEMPTS || '5', 10),
     reconnectDelay: parseInt(process.env.FOUNDRY_RECONNECT_DELAY || '1000', 10),
     connectionTimeout: parseInt(process.env.FOUNDRY_CONNECTION_TIMEOUT || '10000', 10),
+    connectionType: (process.env.FOUNDRY_CONNECTION_TYPE || 'auto') as 'websocket' | 'webrtc' | 'auto',
     protocol: (process.env.FOUNDRY_PROTOCOL || 'ws') as 'ws' | 'wss',
     remoteMode: process.env.FOUNDRY_REMOTE_MODE === 'true',
     dataPath: process.env.FOUNDRY_DATA_PATH,
     rejectUnauthorized: process.env.FOUNDRY_REJECT_UNAUTHORIZED !== 'false',
+    webrtc: {
+      stunServers: process.env.FOUNDRY_STUN_SERVERS
+        ? process.env.FOUNDRY_STUN_SERVERS.split(',')
+        : ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']
+    }
   },
   comfyui: {
     mode: (process.env.COMFYUI_MODE || 'local') as 'local' | 'remote' | 'disabled',

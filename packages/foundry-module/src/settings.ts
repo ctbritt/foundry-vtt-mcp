@@ -236,16 +236,16 @@ export class ModuleSettings {
       onChange: this.onConnectionChange.bind(this),
     });
 
-    game.settings.register(this.moduleId, 'serverProtocol', {
-      name: 'WebSocket Protocol',
-      hint: 'Auto: Matches page protocol automatically. Local/HTTP: ws:// for localhost. Remote/HTTPS: wss:// for secure connections.',
+    game.settings.register(this.moduleId, 'connectionType', {
+      name: 'Connection Type',
+      hint: 'Auto: Smart selection (HTTPS→WebRTC, HTTP→WebSocket). WebRTC: Encrypted P2P (works over internet). WebSocket: Traditional (localhost only).',
       scope: 'world',
       config: true,
       type: String,
       choices: {
-        'auto': 'Auto',
-        'ws': 'Local/HTTP',
-        'wss': 'Remote/HTTPS'
+        'auto': 'Auto (Recommended)',
+        'webrtc': 'WebRTC (Internet)',
+        'websocket': 'WebSocket (Local Only)'
       },
       default: 'auto',
       onChange: this.onConnectionChange.bind(this),
@@ -443,7 +443,7 @@ export class ModuleSettings {
    * Get current bridge configuration from settings
    */
   getBridgeConfig(): BridgeConfig {
-    const protocolSetting = this.getSetting('serverProtocol');
+    const connectionType = this.getSetting('connectionType');
 
     return {
       enabled: this.getSetting('enabled'),
@@ -454,7 +454,7 @@ export class ModuleSettings {
       reconnectDelay: DEFAULT_CONFIG.RECONNECT_DELAY, // Use sensible default
       connectionTimeout: DEFAULT_CONFIG.CONNECTION_TIMEOUT, // Use sensible default
       debugLogging: false, // Always false - use browser console for debugging
-      protocol: protocolSetting as 'auto' | 'ws' | 'wss',
+      connectionType: connectionType as 'auto' | 'webrtc' | 'websocket',
     };
   }
 
@@ -478,7 +478,7 @@ export class ModuleSettings {
   getAllSettings(): Record<string, any> {
     const settingKeys = [
       // Basic Settings
-      'enabled', 'serverHost', 'serverPort', 'serverProtocol',
+      'enabled', 'serverHost', 'serverPort', 'connectionType',
       // Permissions
       'allowWriteOperations',
       // Safety Controls
@@ -592,7 +592,7 @@ export class ModuleSettings {
   async resetToDefaults(): Promise<void> {
     const settingKeys = [
       // Basic Settings
-      'enabled', 'serverHost', 'serverPort', 'serverProtocol',
+      'enabled', 'serverHost', 'serverPort', 'connectionType',
       // Permissions
       'allowWriteOperations',
       // Safety Controls
