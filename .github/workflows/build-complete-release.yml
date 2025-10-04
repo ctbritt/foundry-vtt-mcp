@@ -107,10 +107,11 @@ jobs:
       run: npm run build:bundle --workspace=packages/mcp-server
         
     - name: Setup NSIS
-      uses: joncloud/makensis-action@v4.1
-      
+      run: choco install nsis -y
+
     - name: Build NSIS Installer
       run: |
+        $env:PATH = "C:\Program Files (x86)\NSIS;$env:PATH"
         cd installer
         node build-nsis.js --version $env:PACKAGE_VERSION
         
