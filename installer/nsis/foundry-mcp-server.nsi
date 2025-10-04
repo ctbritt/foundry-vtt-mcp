@@ -45,11 +45,27 @@ InstallDir "$LOCALAPPDATA\FoundryMCPServer"
 RequestExecutionLevel user
 
 ; Version information
-VIProductVersion "0.5.0.0"
+; Strip 'v' prefix and any suffix (like '-pre', '-alpha', etc.) from VERSION
+!ifndef VERSION
+  !define VERSION "v0.5.0"
+!endif
+
+; Process VERSION: remove 'v' prefix and everything after '-'
+!searchparse /noerrors "${VERSION}" "v" STRIPPED_VERSION
+!ifndef STRIPPED_VERSION
+  !define STRIPPED_VERSION "${VERSION}"
+!endif
+
+!searchparse /noerrors "${STRIPPED_VERSION}" "" VERSION_BASE "-"
+!ifndef VERSION_BASE
+  !define VERSION_BASE "${STRIPPED_VERSION}"
+!endif
+
+VIProductVersion "${VERSION_BASE}.0"
 VIAddVersionKey "ProductName" "Foundry MCP Server"
 VIAddVersionKey "CompanyName" "Foundry MCP Bridge"
 VIAddVersionKey "FileDescription" "AI-powered campaign management with map generation for Foundry VTT"
-VIAddVersionKey "FileVersion" "0.5.0.0"
+VIAddVersionKey "FileVersion" "${VERSION_BASE}.0"
 VIAddVersionKey "LegalCopyright" "© 2024 Foundry MCP Bridge"
 
 ;--------------------------------
