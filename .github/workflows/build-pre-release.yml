@@ -67,6 +67,7 @@ jobs:
 
     - name: Build NSIS Installer
       run: |
+        $env:PATH = "C:\Program Files (x86)\NSIS;$env:PATH"
         cd installer
         node build-nsis.js --version $env:PACKAGE_VERSION
 
