@@ -18,6 +18,7 @@ interface PendingQuery {
 export class FoundryConnector {
   private wss: WebSocketServer | null = null;
   private httpServer: any;
+  private webrtcSignalingServer: any; // Separate HTTP server for WebRTC signaling
   private logger: Logger;
   private config: Config['foundry'];
   private isStarted = false;
@@ -44,13 +45,71 @@ export class FoundryConnector {
       remoteMode: this.config.remoteMode || false
     });
 
-    // Create HTTP server for WebSocket upgrade
-    this.httpServer = createServer();
+    // Create HTTP server for WebSocket connections
+    this.httpServer = createServer((req, res) => {
+      res.writeHead(404);
+      res.end();
+    });
 
-    // Create WebSocket server
-    this.wss = new WebSocketServer({
-      server: this.httpServer,
-      path: this.config.namespace || '/'
+    // Create SEPARATE HTTP server for WebRTC signaling (port 31416)
+    const WEBRTC_PORT = 31416;
+    this.webrtcSignalingServer = createServer(async (req, res) => {
+      // Set CORS headers for all requests
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+      // Handle OPTIONS preflight
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
+      // Only handle POST to /webrtc-offer
+      if (req.method === 'POST' && req.url === '/webrtc-offer') {
+        try {
+          await this.handleWebRTCOfferHTTP(req, res);
+        } catch (error) {
+          this.logger.error('WebRTC offer handling failed', error);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Internal server error' }));
+        }
+      } else {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Not found' }));
+      }
+    });
+
+    // Start WebRTC signaling server
+    await new Promise<void>((resolve, reject) => {
+      this.webrtcSignalingServer.listen(WEBRTC_PORT, '0.0.0.0', () => {
+        this.logger.info(`WebRTC signaling server listening on port ${WEBRTC_PORT}`);
+        console.error(`[WebRTC] Server started on 0.0.0.0:${WEBRTC_PORT}`);
+        resolve();
+      });
+      this.webrtcSignalingServer.on('error', (error: Error) => {
+        this.logger.error('Failed to start WebRTC signaling server', error);
+        console.error(`[WebRTC] Server error:`, error);
+        reject(error);
+      });
+    });
+
+    // Create WebSocket server in noServer mode to avoid request consumption
+    this.wss = new WebSocketServer({ noServer: true });
+
+    // Manually handle upgrade for WebSocket connections
+    this.httpServer.on('upgrade', (req: any, socket: any, head: any) => {
+      const pathname = req.url || '/';
+
+      // Only upgrade if path matches WebSocket namespace
+      if (pathname === (this.config.namespace || '/')) {
+        this.wss?.handleUpgrade(req, socket, head, (ws) => {
+          this.wss?.emit('connection', ws, req);
+        });
+      } else {
+        socket.destroy();
+      }
     });
 
     // Handle WebSocket connections (both signaling and direct WebSocket)
@@ -232,13 +291,72 @@ export class FoundryConnector {
     }
   }
 
+  private async handleWebRTCOfferHTTP(req: any, res: any): Promise<void> {
+    // CRITICAL: Call resume() to enable stream data flow
+    req.resume();
+
+    try {
+      // Read body using promise wrapper around classic events
+      const body = await new Promise<string>((resolve, reject) => {
+        const chunks: Buffer[] = [];
+
+        req.on('data', (chunk: Buffer) => {
+          chunks.push(chunk);
+        });
+
+        req.on('end', () => {
+          resolve(Buffer.concat(chunks).toString());
+        });
+
+        req.on('error', reject);
+      });
+
+      const { offer } = JSON.parse(body);
+
+      if (!offer) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Missing offer in request body' }));
+        return;
+      }
+
+      // Create WebRTC peer
+      this.webrtcPeer = new WebRTCPeer({
+        config: this.config.webrtc,
+        logger: this.logger,
+        onMessage: this.handleMessage.bind(this)
+      });
+
+      // Handle offer and get answer
+      const answer = await this.webrtcPeer.handleOffer(offer);
+
+      this.activeConnectionType = 'webrtc';
+      this.logger.info('WebRTC connection established via HTTP signaling');
+
+      // Send answer back via HTTP response
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ answer }));
+
+    } catch (error) {
+      this.logger.error('Failed to handle WebRTC offer via HTTP', error);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }));
+    }
+  }
+
   async query(method: string, data?: any): Promise<any> {
-    if (!this.foundrySocket || this.foundrySocket.readyState !== WebSocket.OPEN) {
+    // Check connection based on active connection type
+    const isConnected = this.activeConnectionType === 'webrtc'
+      ? (this.webrtcPeer && this.webrtcPeer.getIsConnected())
+      : (this.foundrySocket && this.foundrySocket.readyState === WebSocket.OPEN);
+
+    if (!isConnected) {
       throw new Error('Not connected to Foundry VTT module');
     }
 
     const queryId = `query-${++this.queryIdCounter}`;
-    this.logger.debug('Sending query to Foundry', { method, data, queryId });
+    this.logger.debug('Sending query to Foundry', { method, data, queryId, connectionType: this.activeConnectionType });
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -254,7 +372,8 @@ export class FoundryConnector {
         data: { method, data }
       };
 
-      this.foundrySocket!.send(JSON.stringify(message));
+      // Use sendToFoundry to support both WebSocket and WebRTC
+      this.sendToFoundry(message);
     });
   }
 
@@ -296,13 +415,13 @@ export class FoundryConnector {
    * Send a message to the connected Foundry module
    */
   sendMessage(message: any): void {
-    if (!this.foundrySocket || this.foundrySocket.readyState !== WebSocket.OPEN) {
+    if (!this.isConnected()) {
       throw new Error('Not connected to Foundry VTT module');
     }
 
     try {
-      this.foundrySocket.send(JSON.stringify(message));
-      this.logger.debug('Sent message to Foundry module', { type: message.type });
+      this.sendToFoundry(message);
+      this.logger.debug('Sent message to Foundry module', { type: message.type, connectionType: this.activeConnectionType });
     } catch (error) {
       this.logger.error('Failed to send message to Foundry module', error);
       throw error;

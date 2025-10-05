@@ -29,58 +29,85 @@ export class WebRTCPeer {
   /**
    * Handle incoming WebRTC offer from browser client
    * Returns answer to be sent back to client
+   *
+   * Critical: Send answer IMMEDIATELY, then trickle ICE candidates
+   * Don't wait for data channel or ICE gathering before answering
    */
   async handleOffer(offer: RTCSessionDescriptionInit): Promise<RTCSessionDescriptionInit> {
-    this.logger.info('Received WebRTC offer from client');
+    const startTime = Date.now();
+    this.logger.info('[WebRTC Timing] Received offer from client');
 
-    // Create peer connection with STUN servers
+    // Create peer connection WITHOUT STUN servers for localhost connections
     this.peerConnection = new RTCPeerConnection({
-      iceServers: this.config.stunServers.map(url => ({ urls: url }))
+      iceServers: [] // Empty for localhost - no external STUN needed
     });
 
     this.setupPeerConnectionHandlers();
 
-    // Set remote description (offer from client)
+    // Step 1: Set remote description (offer from client)
+    const t1 = Date.now();
     await this.peerConnection.setRemoteDescription(offer as any);
+    this.logger.info(`[WebRTC Timing] setRemoteDescription took ${Date.now() - t1}ms`);
 
-    // Wait for data channel from client
-    await this.waitForDataChannel();
-
-    // Create answer
+    // Step 2: Create answer IMMEDIATELY - don't wait for data channel or ICE
+    const t2 = Date.now();
     const answer = await this.peerConnection.createAnswer();
+    this.logger.info(`[WebRTC Timing] createAnswer took ${Date.now() - t2}ms`);
+
+    // Step 3: Set local description
+    const t3 = Date.now();
     await this.peerConnection.setLocalDescription(answer);
+    this.logger.info(`[WebRTC Timing] setLocalDescription took ${Date.now() - t3}ms`);
 
-    // Wait for ICE gathering to complete
-    await this.waitForIceGathering();
+    this.logger.info(`[WebRTC Timing] Answer ready in ${Date.now() - startTime}ms - sending immediately`);
 
-    this.logger.info('Created WebRTC answer');
+    // Data channel and ICE will arrive later via events - don't wait!
+    // The ondatachannel event will fire when the channel is ready
+
     return this.peerConnection.localDescription as RTCSessionDescriptionInit;
   }
 
   private setupPeerConnectionHandlers(): void {
     if (!this.peerConnection) return;
 
-    this.peerConnection.iceConnectionStateChange.subscribe((state) => {
-      this.logger.info(`ICE connection state: ${state}`);
+    // ICE gathering state changes
+    this.peerConnection.iceGatheringStateChange.subscribe((state) => {
+      this.logger.info(`[WebRTC] ICE gathering state: ${state}`);
+    });
 
-      if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+    // ICE connection state changes
+    this.peerConnection.iceConnectionStateChange.subscribe((state) => {
+      this.logger.info(`[WebRTC] ICE connection state: ${state}`);
+
+      if (state === 'failed') {
+        this.logger.error('[WebRTC] ICE connection failed - check STUN/TURN config or firewall');
         this.isConnected = false;
+      } else if (state === 'disconnected' || state === 'closed') {
+        this.isConnected = false;
+      } else if (state === 'connected') {
+        this.logger.info('[WebRTC] ICE connection established');
       }
     });
 
+    // Overall peer connection state
     this.peerConnection.onconnectionstatechange = () => {
       const state = this.peerConnection?.connectionState;
-      this.logger.info(`Peer connection state: ${state}`);
+      this.logger.info(`[WebRTC] Peer connection state: ${state}`);
 
       if (state === 'connected') {
+        this.logger.info('[WebRTC] Peer connection fully established');
         this.isConnected = true;
-      } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+      } else if (state === 'failed') {
+        this.logger.error('[WebRTC] Peer connection failed - DTLS handshake may have failed');
+        this.isConnected = false;
+      } else if (state === 'disconnected' || state === 'closed') {
         this.isConnected = false;
       }
     };
 
+    // Data channel from client (critical event!)
     this.peerConnection.ondatachannel = (event: any) => {
-      this.logger.info('Data channel received from client');
+      this.logger.info('[WebRTC] Data channel received from client!');
       this.dataChannel = event.channel;
       this.setupDataChannelHandlers();
     };
@@ -90,72 +117,30 @@ export class WebRTCPeer {
     if (!this.dataChannel) return;
 
     this.dataChannel.onopen = () => {
-      this.logger.info('WebRTC data channel opened');
+      this.logger.info('[WebRTC] ✓ Data channel opened - connection fully ready!');
       this.isConnected = true;
     };
 
     this.dataChannel.onclose = () => {
-      this.logger.info('WebRTC data channel closed');
+      this.logger.info('[WebRTC] Data channel closed');
       this.isConnected = false;
     };
 
     this.dataChannel.onerror = (error: any) => {
-      this.logger.error('WebRTC data channel error', error);
+      this.logger.error('[WebRTC] Data channel error:', error);
     };
 
     this.dataChannel.onmessage = async (event: any) => {
       try {
         const message = JSON.parse(event.data);
-        this.logger.debug('Received WebRTC message', { type: message.type });
+        this.logger.debug('[WebRTC] Received message', { type: message.type });
         await this.onMessageHandler(message);
       } catch (error) {
-        this.logger.error('Failed to parse WebRTC message', error);
+        this.logger.error('[WebRTC] Failed to parse message', error);
       }
     };
   }
 
-  private async waitForDataChannel(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Data channel timeout'));
-      }, 10000);
-
-      if (this.dataChannel) {
-        clearTimeout(timeout);
-        resolve();
-        return;
-      }
-
-      const checkDataChannel = setInterval(() => {
-        if (this.dataChannel) {
-          clearTimeout(timeout);
-          clearInterval(checkDataChannel);
-          resolve();
-        }
-      }, 100);
-    });
-  }
-
-  private async waitForIceGathering(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('ICE gathering timeout'));
-      }, 10000);
-
-      if (this.peerConnection?.iceGatheringState === 'complete') {
-        clearTimeout(timeout);
-        resolve();
-        return;
-      }
-
-      this.peerConnection!.iceGatheringStateChange.subscribe((state) => {
-        if (state === 'complete') {
-          clearTimeout(timeout);
-          resolve();
-        }
-      });
-    });
-  }
 
   sendMessage(message: any): void {
     if (!this.dataChannel || !this.isConnected) {

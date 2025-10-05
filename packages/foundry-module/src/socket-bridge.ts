@@ -53,11 +53,12 @@ export class SocketBridge {
     const configType = this.config.connectionType || 'auto';
 
     if (configType === 'auto') {
-      // Auto-detect based on page protocol
-      const pageProtocol = window.location.protocol; // 'http:' or 'https:'
-      const detectedType = pageProtocol === 'https:' ? 'webrtc' : 'websocket';
-      this.log(`Auto-detected connection type: ${detectedType} (page is ${pageProtocol})`);
-      return detectedType;
+      // Use WebRTC for HTTPS (secure), WebSocket for HTTP (localhost)
+      // WebRTC provides P2P encrypted channel without needing SSL certificates
+      const isHttps = window.location.protocol === 'https:';
+      const type = isHttps ? 'webrtc' : 'websocket';
+      this.log(`Auto-detected connection type: ${type} (page is ${window.location.protocol})`);
+      return type;
     }
 
     // Use explicit connection type from config
@@ -71,10 +72,7 @@ export class SocketBridge {
       serverHost: this.config.serverHost,
       serverPort: this.config.serverPort,
       namespace: this.config.namespace,
-      stunServers: [
-        'stun:stun.l.google.com:19302',
-        'stun:stun1.l.google.com:19302'
-      ],
+      stunServers: [], // Empty for localhost - must match server configuration
       connectionTimeout: this.config.connectionTimeout,
       debugLogging: this.config.debugLogging
     };
@@ -97,11 +95,12 @@ export class SocketBridge {
   private async connectWebSocket(): Promise<void> {
     this.activeConnectionType = 'websocket';
 
-    // WebSocket mode is for localhost only, always use ws://
+    // WebSocket for HTTP localhost connections only
     const protocol = 'ws';
-    this.log('Using WebSocket (localhost only)');
+    const host = this.config.serverHost;
+    this.log(`Using WebSocket (${protocol}://${host}:${this.config.serverPort})`);
 
-    const wsUrl = `${protocol}://${this.config.serverHost}:${this.config.serverPort}${this.config.namespace}`;
+    const wsUrl = `${protocol}://${host}:${this.config.serverPort}${this.config.namespace}`;
 
     return new Promise((resolve, reject) => {
       const connectTimeout = setTimeout(() => {
@@ -464,6 +463,7 @@ export class SocketBridge {
 
   getConnectionInfo(): any {
     return {
+      type: this.activeConnectionType,
       state: this.connectionState,
       reconnectAttempts: this.reconnectAttempts,
       maxReconnectAttempts: this.maxReconnectAttempts,

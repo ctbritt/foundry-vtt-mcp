@@ -181,14 +181,16 @@ class FoundryMCPBridge {
       this.socketBridge = new SocketBridge(config);
       await this.socketBridge.connect();
 
+      // Log connection details for debugging
+      const connectionInfo = this.socketBridge.getConnectionInfo();
+      console.log(`[${MODULE_ID}] Bridge started successfully - Type: ${connectionInfo.type}, State: ${connectionInfo.state}`);
+
       await this.settings.setSetting('lastConnectionState', 'connected');
       await this.settings.setSetting('lastActivity', new Date().toISOString());
       this.updateLastActivity();
-      
+
       // Update settings display with connection status
       this.settings.updateConnectionStatusDisplay(true, 17); // 17 MCP tools
-      
-      console.log(`[${MODULE_ID}] Bridge started successfully`);
       
       // Start heartbeat monitoring if enabled
       this.startHeartbeat();

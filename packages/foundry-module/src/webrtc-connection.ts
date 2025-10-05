@@ -11,13 +11,13 @@ export interface WebRTCConfig {
 
 /**
  * WebRTC peer connection for browser-to-server communication
- * Uses WebRTC DataChannel for encrypted P2P connection without SSL certificates
+ * Uses HTTP POST for signaling (localhost exception allows HTTP from HTTPS)
+ * Then establishes encrypted WebRTC DataChannel for P2P connection without SSL certificates
  */
 export class WebRTCConnection {
   private peerConnection: RTCPeerConnection | null = null;
   private dataChannel: RTCDataChannel | null = null;
   private connectionState: string = CONNECTION_STATES.DISCONNECTED;
-  private signalingWs: WebSocket | null = null;
   private messageHandler: ((message: any) => Promise<void>) | null = null;
 
   constructor(private config: WebRTCConfig) {}
@@ -72,12 +72,6 @@ export class WebRTCConnection {
     this.dataChannel.onopen = () => {
       this.log('WebRTC data channel opened');
       this.connectionState = CONNECTION_STATES.CONNECTED;
-
-      // Close signaling WebSocket (no longer needed)
-      if (this.signalingWs) {
-        this.signalingWs.close();
-        this.signalingWs = null;
-      }
     };
 
     this.dataChannel.onclose = () => {
@@ -141,51 +135,48 @@ export class WebRTCConnection {
   }
 
   private async sendSignalingOffer(offer: RTCSessionDescriptionInit): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const wsUrl = `ws://${this.config.serverHost}:${this.config.serverPort}${this.config.namespace}`;
+    // Use HTTP POST for signaling to dedicated WebRTC signaling port (31416)
+    // For HTTPS pages, browsers allow HTTP POST to localhost (security exception)
+    // The MCP server must be running on the same machine as the browser
+    const isHttps = window.location.protocol === 'https:';
+    const signalingHost = isHttps ? 'localhost' : this.config.serverHost;
+    const protocol = 'http'; // Always http:// - localhost exception allows this from HTTPS
+    const WEBRTC_SIGNALING_PORT = 31416; // Dedicated port for WebRTC signaling
+    const httpUrl = `${protocol}://${signalingHost}:${WEBRTC_SIGNALING_PORT}/webrtc-offer`;
 
-      this.log(`Opening signaling WebSocket: ${wsUrl}`);
-      this.signalingWs = new WebSocket(wsUrl);
+    this.log(`Sending WebRTC offer via HTTP POST: ${httpUrl} (HTTPS page: ${isHttps})`);
 
-      const timeout = setTimeout(() => {
-        this.signalingWs?.close();
-        reject(new Error('Signaling timeout'));
-      }, this.config.connectionTimeout * 1000);
+    try {
+      const response = await fetch(httpUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ offer }),
+        signal: AbortSignal.timeout(this.config.connectionTimeout * 1000)
+      });
 
-      this.signalingWs.onopen = () => {
-        this.log('Signaling WebSocket opened, sending WebRTC offer');
-        this.signalingWs?.send(JSON.stringify({
-          type: 'webrtc-offer',
-          offer: offer
-        }));
-      };
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
 
-      this.signalingWs.onmessage = async (event) => {
-        try {
-          const message = JSON.parse(event.data);
+      const { answer } = await response.json();
 
-          if (message.type === 'webrtc-answer') {
-            this.log('Received WebRTC answer from server');
-            clearTimeout(timeout);
+      if (!answer) {
+        throw new Error('No answer received from server');
+      }
 
-            await this.peerConnection?.setRemoteDescription(
-              new RTCSessionDescription(message.answer)
-            );
+      this.log('Received WebRTC answer from server via HTTP');
+      await this.peerConnection?.setRemoteDescription(
+        new RTCSessionDescription(answer)
+      );
 
-            resolve();
-          }
-        } catch (error) {
-          clearTimeout(timeout);
-          reject(error);
-        }
-      };
-
-      this.signalingWs.onerror = (error) => {
-        clearTimeout(timeout);
-        this.log(`Signaling WebSocket error: ${error}`);
-        reject(new Error('Signaling failed'));
-      };
-    });
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.log(`Signaling via HTTP failed: ${errorMsg}`);
+      throw error; // Re-throw original error instead of wrapping
+    }
   }
 
   disconnect(): void {
@@ -197,11 +188,6 @@ export class WebRTCConnection {
     if (this.peerConnection) {
       this.peerConnection.close();
       this.peerConnection = null;
-    }
-
-    if (this.signalingWs) {
-      this.signalingWs.close();
-      this.signalingWs = null;
     }
 
     this.connectionState = CONNECTION_STATES.DISCONNECTED;
