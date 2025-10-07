@@ -963,26 +963,41 @@ export class QueryHandlers {
    * Receives base64-encoded image data and saves it to generated-maps folder
    */
   private async handleUploadGeneratedMap(data: any): Promise<any> {
+    console.log(`[${MODULE_ID}] Upload generated map request received`, {
+      hasFilename: !!data.filename,
+      hasImageData: !!data.imageData,
+      imageDataLength: data.imageData?.length
+    });
+
     try {
       // SECURITY: Silent GM validation
       const gmCheck = this.validateGMAccess();
       if (!gmCheck.allowed) {
+        console.error(`[${MODULE_ID}] Upload denied - not GM`);
         return { error: 'Access denied', success: false };
       }
 
       if (!data.filename || typeof data.filename !== 'string') {
+        console.error(`[${MODULE_ID}] Upload failed - invalid filename`);
         throw new Error('Filename is required and must be a string');
       }
 
       if (!data.imageData || typeof data.imageData !== 'string') {
+        console.error(`[${MODULE_ID}] Upload failed - invalid image data`);
         throw new Error('Image data is required and must be a base64 string');
       }
 
+      console.log(`[${MODULE_ID}] Validating filename...`);
       // Validate filename for security (prevent path traversal)
       const safeFilename = data.filename.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
       if (!safeFilename.endsWith('.png') && !safeFilename.endsWith('.jpg') && !safeFilename.endsWith('.jpeg')) {
         throw new Error('Only PNG and JPEG images are supported');
       }
+
+      console.log(`[${MODULE_ID}] Converting base64 to blob...`, {
+        base64Length: data.imageData.length,
+        estimatedSizeMB: (data.imageData.length / 1024 / 1024).toFixed(2)
+      });
 
       // Convert base64 to Blob
       const byteCharacters = atob(data.imageData);
@@ -993,9 +1008,15 @@ export class QueryHandlers {
       const byteArray = new Uint8Array(byteNumbers);
       const blob = new Blob([byteArray], { type: 'image/png' });
 
+      console.log(`[${MODULE_ID}] Creating file object...`, {
+        filename: safeFilename,
+        blobSize: blob.size
+      });
+
       // Create a File object from the Blob
       const file = new File([blob], safeFilename, { type: 'image/png' });
 
+      console.log(`[${MODULE_ID}] Uploading to FilePicker...`);
       // Upload using Foundry's FilePicker.upload method
       const response = await (globalThis as any).FilePicker.upload(
         'data',

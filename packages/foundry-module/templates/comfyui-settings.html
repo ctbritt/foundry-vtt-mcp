@@ -2,35 +2,8 @@
   <section class="eci-block">
     <h2 class="eci-title">Map Generation Service</h2>
     <p class="eci-note">
-      Configure your map generation service for AI-powered battlemap creation. Currently supports
-      ComfyUI installations with plans for future cloud services.
+      Configure your AI-powered battlemap creation service. ComfyUI runs locally on the same machine as your MCP server (where Claude Desktop is installed).
     </p>
-  </section>
-
-  <hr class="eci-divider"/>
-
-  <section class="eci-block">
-    <h3 class="eci-subtitle">Service Type</h3>
-    <div class="eci-form-group">
-      <label for="serviceType" class="eci-label">Service Type:</label>
-      <select name="serviceType" id="serviceType" class="eci-select">
-        <option value="local" {{#if (eq serviceType "local")}}selected{{/if}}>Local Service (ComfyUI)</option>
-        <option value="remote" {{#if (eq serviceType "remote")}}selected{{/if}}>Remote Service</option>
-      </select>
-      <p class="eci-hint">Local: ComfyUI running on your machine. Remote: ComfyUI on another server.</p>
-    </div>
-
-    <div class="eci-form-group" data-service-type="remote">
-      <label for="comfyuiHost" class="eci-label">Service Host:</label>
-      <input type="text" name="comfyuiHost" id="comfyuiHost" value="{{comfyuiHost}}" placeholder="127.0.0.1" class="eci-input">
-      <p class="eci-hint">IP address or hostname where the map generation service is running.</p>
-    </div>
-
-    <div class="eci-form-group" data-service-type="local remote">
-      <label for="comfyuiPort" class="eci-label">Service Port:</label>
-      <input type="number" name="comfyuiPort" id="comfyuiPort" value="{{comfyuiPort}}" placeholder="31411" min="1" max="65535" class="eci-input">
-      <p class="eci-hint">Port number for the map generation service API (default: 31411 for ComfyUI).</p>
-    </div>
   </section>
 
   <hr class="eci-divider"/>
@@ -45,10 +18,10 @@
         <button type="button" class="eci-btn check" id="check-status-btn">
           <i class="fas fa-sync"></i> Check Status
         </button>
-        <button type="button" class="eci-btn start" id="start-service-btn" data-service-type="local">
+        <button type="button" class="eci-btn start" id="start-service-btn">
           <i class="fas fa-play"></i> Start Service
         </button>
-        <button type="button" class="eci-btn stop" id="stop-service-btn" data-service-type="local">
+        <button type="button" class="eci-btn stop" id="stop-service-btn">
           <i class="fas fa-stop"></i> Stop Service
         </button>
       </div>
@@ -63,7 +36,7 @@
     <label class="eci-check">
       <input type="checkbox" name="autoStartService" {{#if autoStartService}}checked{{/if}} />
       <span>
-        <strong>Auto-start Map Generation Service</strong> — Automatically start the service when Foundry loads (local services only).
+        <strong>Auto-start Map Generation Service</strong> — Automatically start ComfyUI when Foundry loads.
       </span>
     </label>
   </section>
