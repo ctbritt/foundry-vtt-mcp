@@ -46,38 +46,26 @@ export class ComfyUIClient {
   private baseUrl: string;
   private clientId: string;
 
-  constructor(options: { logger: Logger; config?: Partial<ComfyUIConfig>; mode?: 'local' | 'remote' | 'disabled'; remoteUrl?: string }) {
+  constructor(options: { logger: Logger; config?: Partial<ComfyUIConfig> }) {
     this.logger = options.logger.child({ component: 'ComfyUIClient' });
     this.clientId = `ai-maps-server-${Date.now()}`;
 
-    // Determine ComfyUI mode from options or environment
-    const mode = options.mode || 'local';
-    const isRemote = mode === 'remote';
-
-    // Default configuration
+    // ComfyUI always runs locally on the same machine as the MCP server
     this.config = {
-      installPath: isRemote ? undefined : this.getDefaultInstallPath(),
+      installPath: this.getDefaultInstallPath(),
       host: '127.0.0.1',
       port: 31411,
       pythonCommand: 'python',
-      autoStart: !isRemote, // Don't auto-start in remote mode
+      autoStart: true,
       ...options.config
     };
 
-    // Use remote URL if provided, otherwise construct from host/port
-    if (options.remoteUrl) {
-      this.baseUrl = options.remoteUrl;
-      this.logger.info('ComfyUI client configured for remote URL', { remoteUrl: options.remoteUrl });
-    } else {
-      this.baseUrl = `http://${this.config.host}:${this.config.port}`;
-    }
+    this.baseUrl = `http://${this.config.host}:${this.config.port}`;
 
     this.logger.info('ComfyUI client initialized', {
-      mode,
       baseUrl: this.baseUrl,
       installPath: this.config.installPath,
-      clientId: this.clientId,
-      isRemote
+      clientId: this.clientId
     });
   }
 
@@ -322,12 +310,18 @@ export class ComfyUIClient {
 
   async getJobStatus(promptId: string): Promise<'queued' | 'running' | 'complete' | 'failed'> {
     try {
+      this.logger.info('Checking job status', { promptId, baseUrl: this.baseUrl });
+
       // Check history for completed jobs
       const historyResponse = await axios.get(`${this.baseUrl}/history/${promptId}`, {
         timeout: 5000
       });
 
-      if (historyResponse.data && Object.keys(historyResponse.data).length > 0) {
+      const historyKeys = Object.keys(historyResponse.data);
+      this.logger.info('History response', { promptId, historyKeys, hasData: historyKeys.length > 0 });
+
+      if (historyResponse.data && historyKeys.length > 0) {
+        this.logger.info('Job found in history - complete', { promptId });
         return 'complete';
       }
 
@@ -337,18 +331,31 @@ export class ComfyUIClient {
       });
 
       const queueData = queueResponse.data;
+      const runningCount = queueData.queue_running?.length || 0;
+      const pendingCount = queueData.queue_pending?.length || 0;
+
+      this.logger.info('Queue response', {
+        promptId,
+        runningCount,
+        pendingCount,
+        runningIds: queueData.queue_running?.map((item: any) => item[1]) || [],
+        pendingIds: queueData.queue_pending?.map((item: any) => item[1]) || []
+      });
 
       // Check running queue
       if (queueData.queue_running && queueData.queue_running.some((item: any) => item[1] === promptId)) {
+        this.logger.info('Job found in running queue', { promptId });
         return 'running';
       }
 
       // Check pending queue
       if (queueData.queue_pending && queueData.queue_pending.some((item: any) => item[1] === promptId)) {
+        this.logger.info('Job found in pending queue', { promptId });
         return 'queued';
       }
 
       // Not found in any queue, might have failed or been removed
+      this.logger.warn('Job not found in any queue - returning failed', { promptId });
       return 'failed';
     } catch (error) {
       this.logger.error('Failed to get job status from ComfyUI', {

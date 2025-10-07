@@ -37,10 +37,8 @@ const ConfigSchema = z.object({
     })
   }),
   comfyui: z.object({
-    mode: z.enum(['local', 'remote', 'disabled']).default('local'),
-    remoteUrl: z.string().optional(), // Full URL like http://192.168.1.100:31411
-    remoteHost: z.string().default('127.0.0.1'),
-    remotePort: z.number().min(1024).max(65535).default(31411),
+    // ComfyUI always runs locally on the same machine as the MCP server
+    port: z.number().min(1024).max(65535).default(31411),
   }),
   server: z.object({
     name: z.string().default('foundry-mcp-server'),
@@ -74,10 +72,8 @@ const rawConfig = {
     }
   },
   comfyui: {
-    mode: (process.env.COMFYUI_MODE || 'local') as 'local' | 'remote' | 'disabled',
-    remoteUrl: process.env.COMFYUI_REMOTE_URL,
-    remoteHost: process.env.COMFYUI_REMOTE_HOST || '127.0.0.1',
-    remotePort: parseInt(process.env.COMFYUI_REMOTE_PORT || '31411', 10),
+    // ComfyUI always runs locally on the same machine as the MCP server (localhost:31411)
+    port: 31411
   },
   server: {
     name: process.env.SERVER_NAME || 'foundry-mcp-server',

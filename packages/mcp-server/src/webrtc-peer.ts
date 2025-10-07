@@ -132,11 +132,23 @@ export class WebRTCPeer {
 
     this.dataChannel.onmessage = async (event: any) => {
       try {
+        console.error('[WebRTC DEBUG] Data channel received raw message', {
+          dataLength: event.data?.length,
+          dataPreview: event.data?.substring(0, 100)
+        });
         const message = JSON.parse(event.data);
-        this.logger.debug('[WebRTC] Received message', { type: message.type });
+        console.error('[WebRTC DEBUG] Parsed message successfully', {
+          type: message.type,
+          requestId: message.requestId,
+          hasData: !!message.data
+        });
         await this.onMessageHandler(message);
+        console.error('[WebRTC DEBUG] Message handler completed', { type: message.type });
       } catch (error) {
-        this.logger.error('[WebRTC] Failed to parse message', error);
+        console.error('[WebRTC DEBUG] Failed to parse or handle message', {
+          error: error instanceof Error ? error.message : String(error),
+          rawData: event.data?.substring(0, 200)
+        });
       }
     };
   }

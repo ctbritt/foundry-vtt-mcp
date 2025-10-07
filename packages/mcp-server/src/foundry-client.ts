@@ -50,6 +50,10 @@ export class FoundryClient {
     });
   }
 
+  getConnectionType(): 'websocket' | 'webrtc' | null {
+    return this.connector.getConnectionType();
+  }
+
   async query(method: string, data?: any): Promise<any> {
     if (!this.connector.isConnected()) {
       throw new Error('Foundry VTT module not connected. Please ensure Foundry is running and the MCP Bridge module is enabled.');

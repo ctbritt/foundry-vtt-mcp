@@ -403,12 +403,17 @@ export class FoundryConnector {
     return {
       started: this.isStarted,
       connected: this.isConnected(),
+      connectionType: this.activeConnectionType,
       readyState: this.foundrySocket?.readyState || 'CLOSED',
       config: {
         port: this.config.port,
         namespace: this.config.namespace
       }
     };
+  }
+
+  getConnectionType(): 'websocket' | 'webrtc' | null {
+    return this.activeConnectionType;
   }
 
   /**

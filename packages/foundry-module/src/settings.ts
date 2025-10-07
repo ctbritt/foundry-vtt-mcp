@@ -76,9 +76,6 @@ export class ModuleSettings {
 
         getData(): any {
           return {
-            serviceType: game.settings.get(MODULE_ID, 'mapGenServiceType') || 'local',
-            comfyuiHost: game.settings.get(MODULE_ID, 'mapGenHost') || '127.0.0.1',
-            comfyuiPort: game.settings.get(MODULE_ID, 'mapGenPort') || 31411,
             autoStartService: game.settings.get(MODULE_ID, 'mapGenAutoStart') || true,
             connectionStatus: this.getConnectionStatus(),
             connectionStatusText: this.getConnectionStatusText()
@@ -97,12 +94,6 @@ export class ModuleSettings {
         activateListeners(html: JQuery) {
           super.activateListeners(html);
 
-          // Service type change handler
-          html.find('#serviceType').change((event) => {
-            const serviceType = (event.target as HTMLSelectElement).value;
-            this.updateServiceTypeVisibility(html, serviceType);
-          });
-
           // Service control buttons
           html.find('#check-status-btn').click(async () => {
             await this.checkServiceStatus();
@@ -115,18 +106,6 @@ export class ModuleSettings {
           html.find('#stop-service-btn').click(async () => {
             await this.stopService();
           });
-
-          // Initialize visibility
-          const serviceType = html.find('#serviceType').val() as string;
-          this.updateServiceTypeVisibility(html, serviceType);
-        }
-
-        updateServiceTypeVisibility(html: JQuery, serviceType: string) {
-          // Hide all service-type specific fields
-          html.find('[data-service-type]').hide();
-
-          // Show relevant fields based on service type
-          html.find(`[data-service-type*="${serviceType}"]`).show();
         }
 
         async checkServiceStatus() {
@@ -192,9 +171,6 @@ export class ModuleSettings {
         }
 
         async _updateObject(_event: Event, formData: any) {
-          await game.settings.set(MODULE_ID, 'mapGenServiceType', formData.serviceType);
-          await game.settings.set(MODULE_ID, 'mapGenHost', formData.comfyuiHost);
-          await game.settings.set(MODULE_ID, 'mapGenPort', formData.comfyuiPort);
           await game.settings.set(MODULE_ID, 'mapGenAutoStart', formData.autoStartService);
           ui.notifications?.info('Map generation service settings saved successfully');
         }
@@ -216,26 +192,6 @@ export class ModuleSettings {
       onChange: this.onEnabledChange.bind(this),
     });
 
-    game.settings.register(this.moduleId, 'serverHost', {
-      name: 'Server Host',
-      hint: 'IP address where the MCP server runs (usually localhost)',
-      scope: 'world',
-      config: true,
-      type: String,
-      default: DEFAULT_CONFIG.MCP_HOST,
-      onChange: this.onConnectionChange.bind(this),
-    });
-
-    game.settings.register(this.moduleId, 'serverPort', {
-      name: 'Server Port',
-      hint: 'Port number for MCP server communication',
-      scope: 'world',
-      config: true,
-      type: Number,
-      default: DEFAULT_CONFIG.MCP_PORT,
-      onChange: this.onConnectionChange.bind(this),
-    });
-
     game.settings.register(this.moduleId, 'connectionType', {
       name: 'Connection Type',
       hint: 'Auto: Smart selection (HTTPS→WebRTC, HTTP→WebSocket). WebRTC: Encrypted P2P (works over internet). WebSocket: Traditional (localhost only).',
@@ -248,6 +204,26 @@ export class ModuleSettings {
         'websocket': 'WebSocket (Local Only)'
       },
       default: 'auto',
+      onChange: this.onConnectionChange.bind(this),
+    });
+
+    game.settings.register(this.moduleId, 'serverHost', {
+      name: 'Websocket Server Host',
+      hint: 'IP address for local Websocket Server connections to the MCP Server (usually localhost). Not used for Remote Connections',
+      scope: 'world',
+      config: true,
+      type: String,
+      default: DEFAULT_CONFIG.MCP_HOST,
+      onChange: this.onConnectionChange.bind(this),
+    });
+
+    game.settings.register(this.moduleId, 'serverPort', {
+      name: 'Server Port',
+      hint: 'Port number for MCP server communication',
+      scope: 'world',
+      config: false,
+      type: Number,
+      default: DEFAULT_CONFIG.MCP_PORT,
       onChange: this.onConnectionChange.bind(this),
     });
 
@@ -302,30 +278,7 @@ export class ModuleSettings {
     });
 
     // Map Generation Service settings (configured via submenu only)
-    game.settings.register(this.moduleId, 'mapGenServiceType', {
-      name: 'Map Generation Service Type',
-      scope: 'world',
-      config: false, // Hidden from main config, accessible via submenu only
-      type: String,
-      default: 'local',
-    });
-
-    game.settings.register(this.moduleId, 'mapGenHost', {
-      name: 'Map Generation Host',
-      scope: 'world',
-      config: false, // Hidden from main config, accessible via submenu only
-      type: String,
-      default: '127.0.0.1',
-    });
-
-    game.settings.register(this.moduleId, 'mapGenPort', {
-      name: 'Map Generation Port',
-      scope: 'world',
-      config: false, // Hidden from main config, accessible via submenu only
-      type: Number,
-      default: 31411,
-    });
-
+    // ComfyUI always runs on localhost:31411 (same machine as MCP server)
     game.settings.register(this.moduleId, 'mapGenAutoStart', {
       name: 'Auto-start Map Generation Service',
       scope: 'world',

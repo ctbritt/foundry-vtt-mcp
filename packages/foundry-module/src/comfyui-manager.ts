@@ -226,8 +226,12 @@ export class ComfyUIManager {
       let isResolved = false;
 
       const cleanup = () => {
-        if (eventHandler && bridge.socketBridge?.ws) {
-          bridge.socketBridge.ws.removeEventListener('message', eventHandler);
+        if (eventHandler) {
+          if (bridge.socketBridge?.ws) {
+            bridge.socketBridge.ws.removeEventListener('message', eventHandler);
+          } else if (bridge.socketBridge?.webrtc?.dataChannel) {
+            bridge.socketBridge.webrtc.dataChannel.removeEventListener('message', eventHandler);
+          }
         }
       };
 
@@ -263,9 +267,18 @@ export class ComfyUIManager {
         }
       };
 
-      // Register response handler with better error handling
+      // Register response handler - works for both WebSocket and WebRTC
       try {
-        bridge.socketBridge.ws?.addEventListener('message', eventHandler);
+        // Add listener based on connection type
+        if (bridge.socketBridge.ws) {
+          // WebSocket mode
+          bridge.socketBridge.ws.addEventListener('message', eventHandler);
+        } else if (bridge.socketBridge.webrtc?.dataChannel) {
+          // WebRTC mode
+          bridge.socketBridge.webrtc.dataChannel.addEventListener('message', eventHandler);
+        } else {
+          throw new Error('No active connection (neither WebSocket nor WebRTC)');
+        }
       } catch (error) {
         isResolved = true;
         clearTimeout(timeoutHandle);
