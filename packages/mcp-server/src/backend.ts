@@ -115,8 +115,7 @@ function getBundledPythonPath(): string {
 
   // Common paths for both platforms
   fallbackPaths.push(
-    path.join(process.cwd(), '..', '..', 'ComfyUI-env', scriptsDir, pythonBinary),
-    path.join(__dirname, '..', '..', '..', 'ComfyUI-env', scriptsDir, pythonBinary)
+    path.join(process.cwd(), '..', '..', 'ComfyUI-env', scriptsDir, pythonBinary)
   );
 
   for (const fallbackPath of fallbackPaths) {
@@ -247,12 +246,14 @@ async function findComfyUIPath(): Promise<string> {
       path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI-headless')
     );
   } else {
-    // Linux/Mac paths
+    // Linux/Mac paths (check both uppercase and lowercase variants)
     searchPaths.push(
       path.join(os.homedir(), '.local', 'share', 'FoundryMCPServer', 'ComfyUI'),
       path.join(os.homedir(), 'FoundryMCPServer', 'ComfyUI'),
+      path.join(os.homedir(), 'ComfyUI'),
       path.join(os.homedir(), 'comfyui'),
       path.join('/opt', 'FoundryMCPServer', 'ComfyUI'),
+      path.join('/opt', 'ComfyUI'),
       path.join('/opt', 'comfyui')
     );
   }
