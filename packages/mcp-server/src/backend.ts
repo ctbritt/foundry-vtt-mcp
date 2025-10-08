@@ -39,8 +39,16 @@ const CONTROL_PORT = 31414;
 const LOCK_FILE = path.join(os.tmpdir(), 'foundry-mcp-backend.lock');
 
 function getBundledPythonPath(): string {
-  // Detect installation directory based on current executable location
-  let installDir = path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer');
+  const isWindows = os.platform() === 'win32';
+
+  // Detect installation directory based on platform
+  let installDir: string;
+  if (isWindows) {
+    installDir = path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer');
+  } else {
+    // Linux/Mac: use ~/.local/share or just home directory
+    installDir = path.join(os.homedir(), '.local', 'share', 'FoundryMCPServer');
+  }
 
   // Try to detect install directory from current process location
   const currentDir = process.cwd();
@@ -60,37 +68,56 @@ function getBundledPythonPath(): string {
     }
   }
 
-  // Check for nested ComfyUI installation (current actual structure)
-  const nestedComfyUIPythonPath = path.join(installDir, 'ComfyUI', 'ComfyUI', 'python_embeded', 'python.exe');
-  if (fs.existsSync(nestedComfyUIPythonPath)) {
-    return nestedComfyUIPythonPath;
+  const pythonBinary = isWindows ? 'python.exe' : 'python';
+  const scriptsDir = isWindows ? 'Scripts' : 'bin';
+
+  // Check for nested ComfyUI installation (Windows portable structure)
+  if (isWindows) {
+    const nestedComfyUIPythonPath = path.join(installDir, 'ComfyUI', 'ComfyUI', 'python_embeded', pythonBinary);
+    if (fs.existsSync(nestedComfyUIPythonPath)) {
+      return nestedComfyUIPythonPath;
+    }
+
+    // Check for flat ComfyUI portable installation (fallback)
+    const portablePythonPath = path.join(installDir, 'ComfyUI', 'python_embeded', pythonBinary);
+    if (fs.existsSync(portablePythonPath)) {
+      return portablePythonPath;
+    }
   }
 
-  // Check for flat ComfyUI portable installation (fallback)
-  const portablePythonPath = path.join(installDir, 'ComfyUI', 'python_embeded', 'python.exe');
-  if (fs.existsSync(portablePythonPath)) {
-    return portablePythonPath;
-  }
-
-  // Path to bundled Python virtual environment (legacy)
-  const bundledPythonPath = path.join(installDir, 'ComfyUI-env', 'Scripts', 'python.exe');
-
-  // Check if bundled Python exists
+  // Path to bundled Python virtual environment
+  const bundledPythonPath = path.join(installDir, 'ComfyUI-env', scriptsDir, pythonBinary);
   if (fs.existsSync(bundledPythonPath)) {
     return bundledPythonPath;
   }
 
   // Fallback: try alternative installation paths
-  const fallbackPaths = [
-    path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI', 'ComfyUI', 'python_embeded', 'python.exe'),
-    path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI-headless', 'ComfyUI', 'python_embeded', 'python.exe'),
-    path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI', 'python_embeded', 'python.exe'),
-    path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI-headless', 'python_embeded', 'python.exe'),
-    path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI-env', 'Scripts', 'python.exe'),
-    path.join(process.cwd(), '..', '..', 'ComfyUI-env', 'Scripts', 'python.exe'),
-    path.join(__dirname, '..', '..', '..', 'ComfyUI-env', 'Scripts', 'python.exe'),
-    path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'Python', 'python.exe')
-  ];
+  const fallbackPaths: string[] = [];
+
+  if (isWindows) {
+    fallbackPaths.push(
+      path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI', 'ComfyUI', 'python_embeded', pythonBinary),
+      path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI-headless', 'ComfyUI', 'python_embeded', pythonBinary),
+      path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI', 'python_embeded', pythonBinary),
+      path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI-headless', 'python_embeded', pythonBinary),
+      path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI-env', scriptsDir, pythonBinary),
+      path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'Python', pythonBinary)
+    );
+  } else {
+    // Linux/Mac paths
+    fallbackPaths.push(
+      path.join(os.homedir(), '.local', 'share', 'FoundryMCPServer', 'ComfyUI-env', scriptsDir, pythonBinary),
+      path.join(os.homedir(), 'FoundryMCPServer', 'ComfyUI-env', scriptsDir, pythonBinary),
+      path.join(os.homedir(), 'comfyui', 'venv', scriptsDir, pythonBinary),
+      path.join('/opt', 'FoundryMCPServer', 'ComfyUI-env', scriptsDir, pythonBinary)
+    );
+  }
+
+  // Common paths for both platforms
+  fallbackPaths.push(
+    path.join(process.cwd(), '..', '..', 'ComfyUI-env', scriptsDir, pythonBinary),
+    path.join(__dirname, '..', '..', '..', 'ComfyUI-env', scriptsDir, pythonBinary)
+  );
 
   for (const fallbackPath of fallbackPaths) {
     if (fs.existsSync(fallbackPath)) {
@@ -98,9 +125,9 @@ function getBundledPythonPath(): string {
     }
   }
 
-  // Final fallback to system Python (should not happen with bundled installer)
+  // Final fallback to system Python
   console.error('Bundled Python not found, falling back to system Python');
-  return 'python';
+  return 'python3';
 }
 
 
@@ -207,40 +234,37 @@ function releaseLock(): void {
 // ComfyUI Service Management Functions
 
 async function findComfyUIPath(): Promise<string> {
+  const isWindows = os.platform() === 'win32';
 
-  // Check for nested ComfyUI installation (current actual structure)
+  const searchPaths: string[] = [];
 
-  const nestedComfyUIPath = path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI', 'ComfyUI');
-
-  if (fs.existsSync(path.join(nestedComfyUIPath, 'main.py'))) {
-
-    return nestedComfyUIPath;
-
+  if (isWindows) {
+    // Windows paths
+    searchPaths.push(
+      path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI', 'ComfyUI'),
+      path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI-headless', 'ComfyUI'),
+      path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI'),
+      path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI-headless')
+    );
+  } else {
+    // Linux/Mac paths
+    searchPaths.push(
+      path.join(os.homedir(), '.local', 'share', 'FoundryMCPServer', 'ComfyUI'),
+      path.join(os.homedir(), 'FoundryMCPServer', 'ComfyUI'),
+      path.join(os.homedir(), 'comfyui'),
+      path.join('/opt', 'FoundryMCPServer', 'ComfyUI'),
+      path.join('/opt', 'comfyui')
+    );
   }
 
-  // Check for legacy nested ComfyUI-headless installation (fallback)
-
-  const nestedHeadlessPath = path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI-headless', 'ComfyUI');
-
-  if (fs.existsSync(path.join(nestedHeadlessPath, 'main.py'))) {
-
-    return nestedHeadlessPath;
-
+  // Check each path for ComfyUI main.py
+  for (const searchPath of searchPaths) {
+    if (fs.existsSync(path.join(searchPath, 'main.py'))) {
+      return searchPath;
+    }
   }
 
-  // Check for flat ComfyUI installation (unlikely but possible)
-
-  const flatPath = path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI');
-
-  if (fs.existsSync(path.join(flatPath, 'main.py'))) {
-
-    return flatPath;
-
-  }
-
-  // Check for legacy flat ComfyUI-headless installation (fallback)
-
-  const legacyFlatPath = path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI-headless');
+  const legacyFlatPath = searchPaths[searchPaths.length - 1];
 
   if (fs.existsSync(path.join(legacyFlatPath, 'main.py'))) {
 

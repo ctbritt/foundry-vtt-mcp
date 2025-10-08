@@ -70,11 +70,21 @@ export class ComfyUIClient {
   }
 
   private getDefaultInstallPath(): string {
-    // Nested inside foundry-mcp-server directory
-    return path.join(
-      os.homedir(),
-      'AppData', 'Local', 'FoundryMCPServer', 'foundry-mcp-server', 'ComfyUI-headless'
-    );
+    const isWindows = os.platform() === 'win32';
+
+    if (isWindows) {
+      // Windows path
+      return path.join(
+        os.homedir(),
+        'AppData', 'Local', 'FoundryMCPServer', 'foundry-mcp-server', 'ComfyUI-headless'
+      );
+    } else {
+      // Linux/Mac path
+      return path.join(
+        os.homedir(),
+        '.local', 'share', 'FoundryMCPServer', 'ComfyUI'
+      );
+    }
   }
 
   async checkInstallation(): Promise<boolean> {
