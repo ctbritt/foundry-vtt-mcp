@@ -1740,7 +1740,12 @@ async function startBackend(): Promise<void> {
 
   });
 
-  void autoStartComfyUI();
+  // Only auto-start local ComfyUI if RunPod is not enabled
+  if (!config.runpod?.enabled) {
+    void autoStartComfyUI();
+  } else {
+    logger.info('Skipping ComfyUI auto-start (RunPod enabled)');
+  }
 
   // Shutdown hooks
 
