@@ -3,7 +3,7 @@
 const axios = require('axios');
 
 async function testWorkflow() {
-  const baseUrl = 'http://127.0.0.1:31411';
+  const baseUrl = 'http://127.0.0.1:8188';
   const clientId = 'test-client-' + Date.now();
 
   console.log('Testing ComfyUI workflow submission...\n');
@@ -12,7 +12,7 @@ async function testWorkflow() {
   const workflow = {
     "1": { // CheckpointLoaderSimple
       "inputs": {
-        "ckpt_name": "Battlemap_4_400.safetensors"
+        "ckpt_name": "dDBattlemapsSDXL10_v10.safetensors"
       },
       "class_type": "CheckpointLoaderSimple"
     },
