@@ -24,6 +24,7 @@ SECURITY.md
 .specstory/
 .cursor/
 .claude/
+.cursorignore
 
 # OS files
 .DS_Store
