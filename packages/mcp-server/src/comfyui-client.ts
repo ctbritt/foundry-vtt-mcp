@@ -50,11 +50,14 @@ export class ComfyUIClient {
     this.logger = options.logger.child({ component: 'ComfyUIClient' });
     this.clientId = `ai-maps-server-${Date.now()}`;
 
-    // ComfyUI always runs locally on the same machine as the MCP server
+    // ComfyUI configuration - can be overridden via options or environment
+    const host = options.config?.host || process.env.COMFYUI_HOST || '127.0.0.1';
+    const port = options.config?.port || parseInt(process.env.COMFYUI_PORT || '31411', 10);
+
     this.config = {
       installPath: this.getDefaultInstallPath(),
-      host: '127.0.0.1',
-      port: 31411,
+      host: host,
+      port: port,
       pythonCommand: 'python',
       autoStart: true,
       ...options.config
@@ -69,22 +72,49 @@ export class ComfyUIClient {
     });
   }
 
-  private getDefaultInstallPath(): string {
+  private getDefaultInstallPath(): string | undefined {
     const isWindows = os.platform() === 'win32';
 
+    // Check environment variable first
+    if (process.env.COMFYUI_PATH) {
+      return process.env.COMFYUI_PATH;
+    }
+
+    // Search for existing ComfyUI installation
+    const searchPaths: string[] = [];
+
     if (isWindows) {
-      // Windows path
-      return path.join(
-        os.homedir(),
-        'AppData', 'Local', 'FoundryMCPServer', 'foundry-mcp-server', 'ComfyUI-headless'
+      searchPaths.push(
+        path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'foundry-mcp-server', 'ComfyUI-headless'),
+        path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI', 'ComfyUI'),
+        path.join(os.homedir(), 'AppData', 'Local', 'FoundryMCPServer', 'ComfyUI'),
+        path.join(os.homedir(), 'ComfyUI')
       );
     } else {
-      // Linux/Mac path
-      return path.join(
-        os.homedir(),
-        '.local', 'share', 'FoundryMCPServer', 'ComfyUI'
+      // Linux/Mac - check common locations
+      searchPaths.push(
+        path.join(os.homedir(), 'ComfyUI'),
+        path.join(os.homedir(), 'comfyui'),
+        path.join(os.homedir(), '.local', 'share', 'FoundryMCPServer', 'ComfyUI'),
+        path.join('/opt', 'ComfyUI'),
+        path.join('/opt', 'comfyui')
       );
     }
+
+    // Return first path that exists and has main.py
+    for (const searchPath of searchPaths) {
+      try {
+        const mainPyPath = path.join(searchPath, 'main.py');
+        if (require('fs').existsSync(mainPyPath)) {
+          return searchPath;
+        }
+      } catch {
+        // Continue searching
+      }
+    }
+
+    // Return undefined if no installation found (will be handled by autoStart logic)
+    return undefined;
   }
 
   async checkInstallation(): Promise<boolean> {
@@ -460,7 +490,7 @@ export class ComfyUIClient {
     return {
       "1": { // CheckpointLoaderSimple
         "inputs": {
-          "ckpt_name": "dDBattlemapsSDXL10_upscaleV10.safetensors"
+          "ckpt_name": "Battlemap_4_400.safetensors"
         },
         "class_type": "CheckpointLoaderSimple"
       },

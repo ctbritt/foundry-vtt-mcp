@@ -235,6 +235,14 @@ function releaseLock(): void {
 async function findComfyUIPath(): Promise<string> {
   const isWindows = os.platform() === 'win32';
 
+  // Check environment variable first
+  if (process.env.COMFYUI_PATH) {
+    const envPath = process.env.COMFYUI_PATH;
+    if (fs.existsSync(path.join(envPath, 'main.py'))) {
+      return envPath;
+    }
+  }
+
   const searchPaths: string[] = [];
 
   if (isWindows) {
@@ -248,10 +256,10 @@ async function findComfyUIPath(): Promise<string> {
   } else {
     // Linux/Mac paths (check both uppercase and lowercase variants)
     searchPaths.push(
+      path.join(os.homedir(), 'ComfyUI'),  // Check home directory first
+      path.join(os.homedir(), 'comfyui'),
       path.join(os.homedir(), '.local', 'share', 'FoundryMCPServer', 'ComfyUI'),
       path.join(os.homedir(), 'FoundryMCPServer', 'ComfyUI'),
-      path.join(os.homedir(), 'ComfyUI'),
-      path.join(os.homedir(), 'comfyui'),
       path.join('/opt', 'FoundryMCPServer', 'ComfyUI'),
       path.join('/opt', 'ComfyUI'),
       path.join('/opt', 'comfyui')
@@ -281,11 +289,16 @@ async function waitForComfyUIReady(timeoutMs: number = 60000): Promise<void> {
 
   const startTime = Date.now();
 
+  // Use configured host and port
+  const host = process.env.COMFYUI_HOST || '127.0.0.1';
+  const port = process.env.COMFYUI_PORT || '31411';
+  const healthUrl = `http://${host}:${port}/system_stats`;
+
   while (Date.now() - startTime < timeoutMs) {
 
     try {
 
-      const response = await fetch('http://127.0.0.1:31411/system_stats', {
+      const response = await fetch(healthUrl, {
 
         signal: AbortSignal.timeout(5000)
 
@@ -341,17 +354,29 @@ async function startComfyUIService(logger: Logger): Promise<any> {
 
     logger.info('Starting ComfyUI process', { path: path.join(comfyUIPath, 'main.py') });
 
-    // Use bundled Python virtual environment
-    const pythonExe = getBundledPythonPath();
-    logger.info('Using bundled Python', { pythonPath: pythonExe });
+    // Use bundled Python virtual environment or ComfyUI's venv
+    let pythonExe = getBundledPythonPath();
+
+    // Check if ComfyUI has its own venv (common on Linux)
+    const comfyUIVenvPython = path.join(comfyUIPath, 'venv', 'bin', 'python');
+    if (fs.existsSync(comfyUIVenvPython)) {
+      pythonExe = comfyUIVenvPython;
+      logger.info('Using ComfyUI virtual environment Python', { pythonPath: pythonExe });
+    } else {
+      logger.info('Using bundled Python', { pythonPath: pythonExe });
+    }
+
+    // Get listen address from environment or default to 127.0.0.1
+    const listenAddress = process.env.COMFYUI_LISTEN || '127.0.0.1';
+    const listenPort = process.env.COMFYUI_PORT || '31411';
 
     comfyuiProcess = spawn(pythonExe, [
 
       'main.py',
 
-      '--port', '31411',
+      '--port', listenPort,
 
-      '--listen', '127.0.0.1',
+      '--listen', listenAddress,
 
       '--disable-auto-launch',
 
@@ -521,7 +546,12 @@ async function checkComfyUIStatus(): Promise<any> {
 
     try {
 
-      const response = await fetch('http://127.0.0.1:31411/system_stats', {
+      // Use configured host and port
+      const host = process.env.COMFYUI_HOST || '127.0.0.1';
+      const port = process.env.COMFYUI_PORT || '31411';
+      const healthUrl = `http://${host}:${port}/system_stats`;
+
+      const response = await fetch(healthUrl, {
 
         signal: AbortSignal.timeout(5000)
 
@@ -1029,11 +1059,13 @@ async function startBackend(): Promise<void> {
 
     mapGenerationJobQueue = new JobQueue({ logger });
 
-    // Initialize ComfyUI client - always runs locally on same machine as MCP server
+    // Initialize ComfyUI client - respects environment configuration
     mapGenerationComfyUIClient = new ComfyUIClient({
       logger,
       config: {
-        port: config.comfyui?.port || 31411
+        host: process.env.COMFYUI_HOST || '127.0.0.1',
+        port: config.comfyui?.port || parseInt(process.env.COMFYUI_PORT || '31411', 10),
+        installPath: process.env.COMFYUI_PATH || undefined
       }
     });
 
