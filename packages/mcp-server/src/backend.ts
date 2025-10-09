@@ -951,7 +951,7 @@ async function startBackend(): Promise<void> {
 
     mapGenerationJobQueue = new JobQueue({ logger });
 
-    // Initialize ComfyUI client with mode from config
+    // Initialize ComfyUI client with enhanced configuration
     const comfyuiMode = config.comfyui?.mode || 'local';
     let comfyuiRemoteUrl: string | undefined = undefined;
 
@@ -963,7 +963,12 @@ async function startBackend(): Promise<void> {
 
     const clientOptions: any = {
       logger,
-      mode: comfyuiMode
+      mode: comfyuiMode,
+      config: {
+        ...config.comfyui,
+        installPath: comfyuiMode === 'local' || comfyuiMode === 'auto' ? undefined : undefined,
+        autoStart: comfyuiMode === 'local' || comfyuiMode === 'auto'
+      }
     };
 
     if (comfyuiRemoteUrl !== undefined) {

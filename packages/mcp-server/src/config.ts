@@ -21,10 +21,23 @@ const ConfigSchema = z.object({
     rejectUnauthorized: z.boolean().default(true), // TLS certificate validation
   }),
   comfyui: z.object({
-    mode: z.enum(['local', 'remote', 'disabled']).default('local'),
+    mode: z.enum(['local', 'remote', 'disabled', 'auto']).default('local'),
     remoteUrl: z.string().optional(), // Full URL like http://192.168.1.100:31411
     remoteHost: z.string().default('127.0.0.1'),
     remotePort: z.number().min(1024).max(65535).default(31411),
+    // Remote service providers
+    providers: z.array(z.object({
+      name: z.string(), // 'comfyai-run', 'runpod', 'custom', etc.
+      url: z.string(),
+      apiKey: z.string().optional(),
+      priority: z.number().min(1).max(10).default(5), // Higher = more preferred
+      enabled: z.boolean().default(true),
+      timeout: z.number().min(5000).max(300000).default(60000), // 1 minute default
+      retryAttempts: z.number().min(0).max(5).default(2),
+    })).default([]),
+    // Fallback behavior
+    fallbackToLocal: z.boolean().default(true),
+    healthCheckInterval: z.number().min(10000).max(300000).default(30000), // 30 seconds
   }),
   server: z.object({
     name: z.string().default('foundry-mcp-server'),
@@ -52,10 +65,13 @@ const rawConfig = {
     rejectUnauthorized: process.env.FOUNDRY_REJECT_UNAUTHORIZED !== 'false',
   },
   comfyui: {
-    mode: (process.env.COMFYUI_MODE || 'local') as 'local' | 'remote' | 'disabled',
+    mode: (process.env.COMFYUI_MODE || 'local') as 'local' | 'remote' | 'disabled' | 'auto',
     remoteUrl: process.env.COMFYUI_REMOTE_URL,
     remoteHost: process.env.COMFYUI_REMOTE_HOST || '127.0.0.1',
     remotePort: parseInt(process.env.COMFYUI_REMOTE_PORT || '31411', 10),
+    providers: process.env.COMFYUI_PROVIDERS ? JSON.parse(process.env.COMFYUI_PROVIDERS) : [],
+    fallbackToLocal: process.env.COMFYUI_FALLBACK_TO_LOCAL !== 'false',
+    healthCheckInterval: parseInt(process.env.COMFYUI_HEALTH_CHECK_INTERVAL || '30000', 10),
   },
   server: {
     name: process.env.SERVER_NAME || 'foundry-mcp-server',

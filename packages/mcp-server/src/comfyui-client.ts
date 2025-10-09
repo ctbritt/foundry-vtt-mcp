@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import axios from 'axios';
 import { Logger } from './logger.js';
+import { ComfyUIProviderManager, ComfyUIProvider } from './comfyui-provider-manager.js';
 
 export interface ComfyUIWorkflowInput {
   prompt: string;
@@ -24,6 +25,10 @@ export interface ComfyUIConfig {
   port: number;
   pythonCommand: string;
   autoStart: boolean;
+  mode: 'local' | 'remote' | 'disabled' | 'auto';
+  remoteUrl?: string;
+  providers?: ComfyUIProvider[];
+  fallbackToLocal?: boolean;
 }
 
 export interface ComfyUIHealthInfo {
@@ -45,14 +50,16 @@ export class ComfyUIClient {
   private process?: ChildProcess | undefined;
   private baseUrl: string;
   private clientId: string;
+  private providerManager?: ComfyUIProviderManager;
+  private isUsingRemote: boolean = false;
 
-  constructor(options: { logger: Logger; config?: Partial<ComfyUIConfig>; mode?: 'local' | 'remote' | 'disabled'; remoteUrl?: string }) {
+  constructor(options: { logger: Logger; config?: Partial<ComfyUIConfig>; mode?: 'local' | 'remote' | 'disabled' | 'auto'; remoteUrl?: string }) {
     this.logger = options.logger.child({ component: 'ComfyUIClient' });
     this.clientId = `ai-maps-server-${Date.now()}`;
 
     // Determine ComfyUI mode from options or environment
     const mode = options.mode || 'local';
-    const isRemote = mode === 'remote';
+    const isRemote = mode === 'remote' || mode === 'auto';
 
     // Default configuration
     this.config = {
@@ -61,14 +68,38 @@ export class ComfyUIClient {
       port: 31411,
       pythonCommand: 'python',
       autoStart: !isRemote, // Don't auto-start in remote mode
+      mode: mode as 'local' | 'remote' | 'disabled' | 'auto',
+      fallbackToLocal: true,
       ...options.config
     };
 
+    // Initialize provider manager for remote/auto modes
+    if (mode === 'remote' || mode === 'auto') {
+      if (this.config.providers && this.config.providers.length > 0) {
+        this.providerManager = new ComfyUIProviderManager({
+          logger: this.logger,
+          providers: this.config.providers
+        });
+        this.isUsingRemote = true;
+        this.logger.info('ComfyUI client initialized with remote providers', {
+          providerCount: this.config.providers.length
+        });
+      } else if (options.remoteUrl) {
+        // Fallback to single remote URL
+        this.baseUrl = options.remoteUrl;
+        this.isUsingRemote = true;
+        this.logger.info('ComfyUI client configured for single remote URL', { remoteUrl: options.remoteUrl });
+      } else if (mode === 'auto') {
+        // Auto mode with no providers - will fallback to local
+        this.logger.info('Auto mode enabled but no remote providers configured, will use local ComfyUI');
+      }
+    }
+
     // Use remote URL if provided, otherwise construct from host/port
-    if (options.remoteUrl) {
+    if (options.remoteUrl && !this.providerManager) {
       this.baseUrl = options.remoteUrl;
       this.logger.info('ComfyUI client configured for remote URL', { remoteUrl: options.remoteUrl });
-    } else {
+    } else if (!this.providerManager) {
       this.baseUrl = `http://${this.config.host}:${this.config.port}`;
     }
 
@@ -77,7 +108,8 @@ export class ComfyUIClient {
       baseUrl: this.baseUrl,
       installPath: this.config.installPath,
       clientId: this.clientId,
-      isRemote
+      isRemote: this.isUsingRemote,
+      hasProviderManager: !!this.providerManager
     });
   }
 
@@ -110,6 +142,40 @@ export class ComfyUIClient {
   }
 
   async checkHealth(): Promise<ComfyUIHealthInfo> {
+    // If using provider manager, check remote providers first
+    if (this.providerManager) {
+      const activeProvider = await this.providerManager.getActiveProvider();
+      if (activeProvider) {
+        const healthStatus = this.providerManager.getHealthStatus();
+        const providerHealth = healthStatus.get(activeProvider.name);
+        
+        if (providerHealth?.available) {
+          return {
+            available: true,
+            responseTime: providerHealth.responseTime,
+            systemInfo: providerHealth.systemInfo,
+            gpuInfo: providerHealth.gpuInfo
+          };
+        }
+      }
+
+      // If no remote providers available and fallback is enabled, try local
+      if (this.config.fallbackToLocal && this.config.installPath) {
+        this.logger.info('No remote providers available, falling back to local ComfyUI');
+        this.isUsingRemote = false;
+        return await this.checkLocalHealth();
+      }
+
+      return {
+        available: false
+      };
+    }
+
+    // Use local health check
+    return await this.checkLocalHealth();
+  }
+
+  private async checkLocalHealth(): Promise<ComfyUIHealthInfo> {
     const startTime = Date.now();
 
     try {
@@ -292,6 +358,28 @@ export class ComfyUIClient {
   }
 
   async submitJob(input: ComfyUIWorkflowInput): Promise<ComfyUIJobResponse> {
+    // If using provider manager, delegate to it
+    if (this.providerManager) {
+      try {
+        return await this.providerManager.submitJob(input);
+      } catch (error) {
+        // If remote fails and fallback is enabled, try local
+        if (this.config.fallbackToLocal && this.config.installPath) {
+          this.logger.warn('Remote ComfyUI failed, falling back to local', {
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+          this.isUsingRemote = false;
+          return await this.submitJobLocal(input);
+        }
+        throw error;
+      }
+    }
+
+    // Use local submission
+    return await this.submitJobLocal(input);
+  }
+
+  private async submitJobLocal(input: ComfyUIWorkflowInput): Promise<ComfyUIJobResponse> {
     const workflow = this.buildWorkflow(input);
 
     try {
@@ -302,7 +390,7 @@ export class ComfyUIClient {
         timeout: 10000
       });
 
-      this.logger.info('ComfyUI job submitted', {
+      this.logger.info('ComfyUI job submitted locally', {
         promptId: response.data.prompt_id,
         clientId: this.clientId
       });
@@ -311,7 +399,7 @@ export class ComfyUIClient {
     } catch (error: any) {
       const responseStatus = error?.response?.status;
       const responseData = error?.response?.data;
-      this.logger.error('Failed to submit job to ComfyUI', {
+      this.logger.error('Failed to submit job to local ComfyUI', {
         error: error instanceof Error ? error.message : 'Unknown error',
         status: responseStatus,
         response: responseData
@@ -321,6 +409,28 @@ export class ComfyUIClient {
   }
 
   async getJobStatus(promptId: string): Promise<'queued' | 'running' | 'complete' | 'failed'> {
+    // If using provider manager, delegate to it
+    if (this.providerManager) {
+      try {
+        return await this.providerManager.getJobStatus(promptId);
+      } catch (error) {
+        // If remote fails and fallback is enabled, try local
+        if (this.config.fallbackToLocal && this.config.installPath) {
+          this.logger.warn('Remote ComfyUI status check failed, falling back to local', {
+            promptId,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+          return await this.getJobStatusLocal(promptId);
+        }
+        throw error;
+      }
+    }
+
+    // Use local status check
+    return await this.getJobStatusLocal(promptId);
+  }
+
+  private async getJobStatusLocal(promptId: string): Promise<'queued' | 'running' | 'complete' | 'failed'> {
     try {
       // Check history for completed jobs
       const historyResponse = await axios.get(`${this.baseUrl}/history/${promptId}`, {
@@ -351,7 +461,7 @@ export class ComfyUIClient {
       // Not found in any queue, might have failed or been removed
       return 'failed';
     } catch (error) {
-      this.logger.error('Failed to get job status from ComfyUI', {
+      this.logger.error('Failed to get job status from local ComfyUI', {
         promptId,
         error: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -360,6 +470,28 @@ export class ComfyUIClient {
   }
 
   async getJobImages(promptId: string): Promise<string[]> {
+    // If using provider manager, delegate to it
+    if (this.providerManager) {
+      try {
+        return await this.providerManager.getJobImages(promptId);
+      } catch (error) {
+        // If remote fails and fallback is enabled, try local
+        if (this.config.fallbackToLocal && this.config.installPath) {
+          this.logger.warn('Remote ComfyUI image retrieval failed, falling back to local', {
+            promptId,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+          return await this.getJobImagesLocal(promptId);
+        }
+        throw error;
+      }
+    }
+
+    // Use local image retrieval
+    return await this.getJobImagesLocal(promptId);
+  }
+
+  private async getJobImagesLocal(promptId: string): Promise<string[]> {
     try {
       const historyResponse = await axios.get(`${this.baseUrl}/history/${promptId}`, {
         timeout: 5000
@@ -390,7 +522,7 @@ export class ComfyUIClient {
 
       return imageFilenames;
     } catch (error) {
-      this.logger.error('Failed to get job images from ComfyUI', {
+      this.logger.error('Failed to get job images from local ComfyUI', {
         promptId,
         error: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -399,6 +531,28 @@ export class ComfyUIClient {
   }
 
   async downloadImage(filename: string): Promise<Buffer> {
+    // If using provider manager, delegate to it
+    if (this.providerManager) {
+      try {
+        return await this.providerManager.downloadImage(filename);
+      } catch (error) {
+        // If remote fails and fallback is enabled, try local
+        if (this.config.fallbackToLocal && this.config.installPath) {
+          this.logger.warn('Remote ComfyUI image download failed, falling back to local', {
+            filename,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+          return await this.downloadImageLocal(filename);
+        }
+        throw error;
+      }
+    }
+
+    // Use local image download
+    return await this.downloadImageLocal(filename);
+  }
+
+  private async downloadImageLocal(filename: string): Promise<Buffer> {
     try {
       const response = await axios.get(`${this.baseUrl}/view`, {
         params: { filename },
@@ -408,7 +562,7 @@ export class ComfyUIClient {
 
       return Buffer.from(response.data);
     } catch (error) {
-      this.logger.error('Failed to download image from ComfyUI', {
+      this.logger.error('Failed to download image from local ComfyUI', {
         filename,
         error: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -417,15 +571,37 @@ export class ComfyUIClient {
   }
 
   async cancelJob(promptId: string): Promise<boolean> {
+    // If using provider manager, delegate to it
+    if (this.providerManager) {
+      try {
+        return await this.providerManager.cancelJob(promptId);
+      } catch (error) {
+        // If remote fails and fallback is enabled, try local
+        if (this.config.fallbackToLocal && this.config.installPath) {
+          this.logger.warn('Remote ComfyUI job cancellation failed, falling back to local', {
+            promptId,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+          return await this.cancelJobLocal(promptId);
+        }
+        throw error;
+      }
+    }
+
+    // Use local job cancellation
+    return await this.cancelJobLocal(promptId);
+  }
+
+  private async cancelJobLocal(promptId: string): Promise<boolean> {
     try {
       const response = await axios.post(`${this.baseUrl}/interrupt`, {}, {
         timeout: 5000
       });
 
-      this.logger.info('ComfyUI job cancelled', { promptId });
+      this.logger.info('ComfyUI job cancelled locally', { promptId });
       return response.status === 200;
     } catch (error) {
-      this.logger.error('Failed to cancel ComfyUI job', {
+      this.logger.error('Failed to cancel local ComfyUI job', {
         promptId,
         error: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -515,6 +691,11 @@ export class ComfyUIClient {
     if (this.process && !this.process.killed) {
       await this.stopService();
     }
+    
+    if (this.providerManager) {
+      await this.providerManager.shutdown();
+    }
+    
     this.logger.info('ComfyUI client shutdown complete');
   }
 }
