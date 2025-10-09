@@ -402,12 +402,11 @@ export class MapGenerationTools {
     const negativePrompt = 'grid, low angle, isometric, oblique, horizon, text, watermark, logo, caption, people, creatures, monsters, blurry, artifacts';
 
     return {
-      "1": { // CheckpointLoaderWithConfig
+      "1": { // CheckpointLoaderSimple
         "inputs": {
-          "ckpt_name": "dDBattlemapsSDXL10_upscaleV10.safetensors",
-          "config_name": "dDBattlemapsSDXL10_upscaleV10.yaml"
+          "ckpt_name": "dDBattlemapsSDXL10_v10.safetensors"
         },
-        "class_type": "CheckpointLoaderWithConfig"
+        "class_type": "CheckpointLoaderSimple"
       },
       "2": { // CLIP Text Encode (Positive)
         "inputs": {
@@ -434,10 +433,10 @@ export class MapGenerationTools {
       "5": { // KSampler
         "inputs": {
           "seed": Math.floor(Math.random() * 1000000),
-          "steps": 35, // SDXL optimized
-          "cfg": 10.0, // D&D Battlemaps SDXL guidelines
+          "steps": 30, // D&D Battlemaps SDXL recommended
+          "cfg": 2.5, // D&D Battlemaps SDXL optimal CFG (2-3 range)
           "denoise": 1.0,
-          "sampler_name": "dpmpp_2m",
+          "sampler_name": "dpmpp_2m_sde", // DPM++ 2M SDE recommended
           "scheduler": "karras",
           "model": ["1", 0],
           "positive": ["2", 0],

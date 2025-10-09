@@ -490,7 +490,7 @@ export class ComfyUIClient {
     return {
       "1": { // CheckpointLoaderSimple
         "inputs": {
-          "ckpt_name": "Battlemap_4_400.safetensors"
+          "ckpt_name": "dDBattlemapsSDXL10_v10.safetensors"
         },
         "class_type": "CheckpointLoaderSimple"
       },
@@ -519,10 +519,10 @@ export class ComfyUIClient {
       "5": { // KSampler
         "inputs": {
           "seed": input.seed || Math.floor(Math.random() * 1000000),
-          "steps": 35, // SDXL optimized
-          "cfg": 10.0, // D&D Battlemaps SDXL guidelines
+          "steps": 30, // D&D Battlemaps SDXL recommended
+          "cfg": 2.5, // D&D Battlemaps SDXL optimal CFG (2-3 range)
           "denoise": 1.0,
-          "sampler_name": "dpmpp_2m",
+          "sampler_name": "dpmpp_2m_sde", // DPM++ 2M SDE recommended
           "scheduler": "karras",
           "model": ["1", 0],
           "positive": ["2", 0],
