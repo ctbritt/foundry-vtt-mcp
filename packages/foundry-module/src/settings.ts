@@ -75,26 +75,53 @@ export class ModuleSettings {
         }
 
         getData(): any {
+          const serviceMode = game.settings.get(MODULE_ID, 'mapGenServiceMode') || 'local';
           return {
+            serviceMode,
             autoStartService: game.settings.get(MODULE_ID, 'mapGenAutoStart') || true,
             connectionStatus: this.getConnectionStatus(),
-            connectionStatusText: this.getConnectionStatusText()
+            connectionStatusText: this.getConnectionStatusText(),
+            // Remote settings
+            runPodApiKey: game.settings.get(MODULE_ID, 'mapGenRunPodApiKey') || '',
+            runPodEndpointId: game.settings.get(MODULE_ID, 'mapGenRunPodEndpointId') || '',
+            runPodApiUrl: game.settings.get(MODULE_ID, 'mapGenRunPodApiUrl') || '',
+            s3Bucket: game.settings.get(MODULE_ID, 'mapGenS3Bucket') || '',
+            s3Region: game.settings.get(MODULE_ID, 'mapGenS3Region') || 'us-east-1',
+            s3AccessKeyId: game.settings.get(MODULE_ID, 'mapGenS3AccessKeyId') || '',
+            s3SecretAccessKey: game.settings.get(MODULE_ID, 'mapGenS3SecretAccessKey') || '',
+            s3PublicBaseUrl: game.settings.get(MODULE_ID, 'mapGenS3PublicBaseUrl') || ''
           };
         }
 
         getConnectionStatus(): string {
+          const serviceMode = game.settings.get(MODULE_ID, 'mapGenServiceMode') || 'local';
+          if (serviceMode === 'remote') {
+            return 'remote-configured';
+          }
           const bridge = (globalThis as any).foundryMCPBridge;
           return bridge?.comfyuiManager ? 'unknown' : 'stopped';
         }
 
         getConnectionStatusText(): string {
+          const serviceMode = game.settings.get(MODULE_ID, 'mapGenServiceMode') || 'local';
+          if (serviceMode === 'remote') {
+            return 'Remote service configured - managed by MCP server';
+          }
           return 'Click "Check Status" to verify service';
         }
 
         activateListeners(html: JQuery) {
           super.activateListeners(html);
 
-          // Service control buttons
+          // Service mode toggle
+          html.find('input[name="serviceMode"]').change(() => {
+            this.toggleServiceMode(html);
+          });
+
+          // Initialize service mode display
+          this.toggleServiceMode(html);
+
+          // Service control buttons (local mode only)
           html.find('#check-status-btn').click(async () => {
             await this.checkServiceStatus();
           });
@@ -106,6 +133,20 @@ export class ModuleSettings {
           html.find('#stop-service-btn').click(async () => {
             await this.stopService();
           });
+        }
+
+        toggleServiceMode(html: JQuery) {
+          const serviceMode = html.find('input[name="serviceMode"]:checked').val();
+          const localSection = html.find('#local-service-section');
+          const remoteSection = html.find('#remote-service-section');
+
+          if (serviceMode === 'remote') {
+            localSection.hide();
+            remoteSection.show();
+          } else {
+            localSection.show();
+            remoteSection.hide();
+          }
         }
 
         async checkServiceStatus() {
@@ -171,8 +212,28 @@ export class ModuleSettings {
         }
 
         async _updateObject(_event: Event, formData: any) {
+          // Save service mode and auto-start setting
+          await game.settings.set(MODULE_ID, 'mapGenServiceMode', formData.serviceMode);
           await game.settings.set(MODULE_ID, 'mapGenAutoStart', formData.autoStartService);
+
+          // Save remote configuration if in remote mode
+          if (formData.serviceMode === 'remote') {
+            await game.settings.set(MODULE_ID, 'mapGenRunPodApiKey', formData.runPodApiKey);
+            await game.settings.set(MODULE_ID, 'mapGenRunPodEndpointId', formData.runPodEndpointId);
+            await game.settings.set(MODULE_ID, 'mapGenRunPodApiUrl', formData.runPodApiUrl);
+            await game.settings.set(MODULE_ID, 'mapGenS3Bucket', formData.s3Bucket);
+            await game.settings.set(MODULE_ID, 'mapGenS3Region', formData.s3Region);
+            await game.settings.set(MODULE_ID, 'mapGenS3AccessKeyId', formData.s3AccessKeyId);
+            await game.settings.set(MODULE_ID, 'mapGenS3SecretAccessKey', formData.s3SecretAccessKey);
+            await game.settings.set(MODULE_ID, 'mapGenS3PublicBaseUrl', formData.s3PublicBaseUrl);
+          }
+
           ui.notifications?.info('Map generation service settings saved successfully');
+          
+          // Show additional info for remote mode
+          if (formData.serviceMode === 'remote') {
+            ui.notifications?.info('Remote service configured. Restart the MCP server to apply changes.');
+          }
         }
       },
       restricted: true
@@ -278,13 +339,89 @@ export class ModuleSettings {
     });
 
     // Map Generation Service settings (configured via submenu only)
-    // ComfyUI always runs on localhost:31411 (same machine as MCP server)
     game.settings.register(this.moduleId, 'mapGenAutoStart', {
       name: 'Auto-start Map Generation Service',
       scope: 'world',
       config: false, // Hidden from main config, accessible via submenu only
       type: Boolean,
       default: true,
+    });
+
+    // Remote service configuration
+    game.settings.register(this.moduleId, 'mapGenServiceMode', {
+      name: 'Service Mode',
+      scope: 'world',
+      config: false,
+      type: String,
+      choices: {
+        'local': 'Local ComfyUI',
+        'remote': 'Remote Service (RunPod/Cloud)'
+      },
+      default: 'local',
+    });
+
+    game.settings.register(this.moduleId, 'mapGenRunPodApiKey', {
+      name: 'RunPod API Key',
+      scope: 'world',
+      config: false,
+      type: String,
+      default: '',
+    });
+
+    game.settings.register(this.moduleId, 'mapGenRunPodEndpointId', {
+      name: 'RunPod Endpoint ID',
+      scope: 'world',
+      config: false,
+      type: String,
+      default: '',
+    });
+
+    game.settings.register(this.moduleId, 'mapGenRunPodApiUrl', {
+      name: 'RunPod API URL',
+      scope: 'world',
+      config: false,
+      type: String,
+      default: '',
+    });
+
+    game.settings.register(this.moduleId, 'mapGenS3Bucket', {
+      name: 'S3 Bucket',
+      scope: 'world',
+      config: false,
+      type: String,
+      default: '',
+    });
+
+    game.settings.register(this.moduleId, 'mapGenS3Region', {
+      name: 'S3 Region',
+      scope: 'world',
+      config: false,
+      type: String,
+      default: 'us-east-1',
+    });
+
+    game.settings.register(this.moduleId, 'mapGenS3AccessKeyId', {
+      name: 'S3 Access Key ID',
+      scope: 'world',
+      config: false,
+      type: String,
+      default: '',
+    });
+
+    game.settings.register(this.moduleId, 'mapGenS3SecretAccessKey', {
+      name: 'S3 Secret Access Key',
+      scope: 'world',
+      config: false,
+      type: String,
+      default: '',
+    });
+
+    game.settings.register(this.moduleId, 'mapGenS3PublicBaseUrl', {
+      name: 'S3 Public Base URL (optional)',
+      scope: 'world',
+      config: false,
+      type: String,
+      default: '',
     });
 
     // ============================================================================

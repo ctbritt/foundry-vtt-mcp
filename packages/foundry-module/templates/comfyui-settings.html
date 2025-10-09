@@ -2,13 +2,29 @@
   <section class="eci-block">
     <h2 class="eci-title">Map Generation Service</h2>
     <p class="eci-note">
-      Configure your AI-powered battlemap creation service. ComfyUI runs locally on the same machine as your MCP server (where Claude Desktop is installed).
+      Configure your AI-powered battlemap creation service. Choose between local ComfyUI or remote cloud services.
     </p>
   </section>
 
   <hr class="eci-divider"/>
 
   <section class="eci-block">
+    <h3 class="eci-subtitle">Service Mode</h3>
+    <div class="eci-radio-group">
+      <label class="eci-radio">
+        <input type="radio" name="serviceMode" value="local" {{#if (eq serviceMode "local")}}checked{{/if}} />
+        <span><strong>Local ComfyUI</strong> — Runs on the same machine as your MCP server</span>
+      </label>
+      <label class="eci-radio">
+        <input type="radio" name="serviceMode" value="remote" {{#if (eq serviceMode "remote")}}checked{{/if}} />
+        <span><strong>Remote Service</strong> — Uses RunPod or other cloud services</span>
+      </label>
+    </div>
+  </section>
+
+  <hr class="eci-divider"/>
+
+  <section class="eci-block" id="local-service-section">
     <h3 class="eci-subtitle">Service Status</h3>
     <div class="eci-status-container">
       <div class="eci-status {{connectionStatus}}" id="connection-status">
@@ -25,6 +41,60 @@
           <i class="fas fa-stop"></i> Stop Service
         </button>
       </div>
+    </div>
+  </section>
+
+  <section class="eci-block" id="remote-service-section" style="display: none;">
+    <h3 class="eci-subtitle">Remote Service Configuration</h3>
+    <p class="eci-note">Configure your remote service settings. These will be used by the MCP server for map generation.</p>
+    
+    <div class="eci-form-group">
+      <label class="eci-label">RunPod API Key</label>
+      <input type="password" name="runPodApiKey" value="{{runPodApiKey}}" class="eci-input" placeholder="rpa_..." />
+      <small class="eci-help">Your RunPod API key for serverless endpoints</small>
+    </div>
+
+    <div class="eci-form-group">
+      <label class="eci-label">RunPod Endpoint ID</label>
+      <input type="text" name="runPodEndpointId" value="{{runPodEndpointId}}" class="eci-input" placeholder="pnto..." />
+      <small class="eci-help">Your RunPod serverless endpoint identifier</small>
+    </div>
+
+    <div class="eci-form-group">
+      <label class="eci-label">RunPod API URL (optional)</label>
+      <input type="url" name="runPodApiUrl" value="{{runPodApiUrl}}" class="eci-input" placeholder="https://api.runpod.ai/v2/..." />
+      <small class="eci-help">Custom API URL if not using default RunPod endpoint</small>
+    </div>
+
+    <hr class="eci-divider"/>
+
+    <h4 class="eci-subtitle">S3 Storage Configuration</h4>
+    <p class="eci-note">Configure S3 for storing generated images (optional but recommended).</p>
+
+    <div class="eci-form-group">
+      <label class="eci-label">S3 Bucket</label>
+      <input type="text" name="s3Bucket" value="{{s3Bucket}}" class="eci-input" placeholder="your-bucket-name" />
+    </div>
+
+    <div class="eci-form-group">
+      <label class="eci-label">S3 Region</label>
+      <input type="text" name="s3Region" value="{{s3Region}}" class="eci-input" placeholder="us-east-1" />
+    </div>
+
+    <div class="eci-form-group">
+      <label class="eci-label">S3 Access Key ID</label>
+      <input type="text" name="s3AccessKeyId" value="{{s3AccessKeyId}}" class="eci-input" placeholder="AKIA..." />
+    </div>
+
+    <div class="eci-form-group">
+      <label class="eci-label">S3 Secret Access Key</label>
+      <input type="password" name="s3SecretAccessKey" value="{{s3SecretAccessKey}}" class="eci-input" placeholder="..." />
+    </div>
+
+    <div class="eci-form-group">
+      <label class="eci-label">S3 Public Base URL (optional)</label>
+      <input type="url" name="s3PublicBaseUrl" value="{{s3PublicBaseUrl}}" class="eci-input" placeholder="https://cdn.example.com" />
+      <small class="eci-help">CDN or custom domain for public image URLs</small>
     </div>
   </section>
 

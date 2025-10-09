@@ -413,6 +413,89 @@
   line-height: 1.4;
 }
 
+/* Radio Button Groups */
+.eci-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.eci-radio {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  cursor: pointer;
+  padding: 0.5rem 0;
+}
+
+.eci-radio input[type="radio"] {
+  margin: 0;
+  flex-shrink: 0;
+  width: 1.2rem;
+  height: 1.2rem;
+  margin-top: 0.1rem;
+}
+
+.eci-radio span {
+  color: #ffffff;
+  line-height: 1.4;
+}
+
+.eci-radio span strong {
+  font-weight: 600;
+  color: #ffffff;
+}
+
+/* Form Groups for Remote Configuration */
+.eci-form-group {
+  margin-bottom: 1rem;
+  width: 100%;
+}
+
+.eci-label {
+  display: block;
+  font-weight: bold;
+  margin-bottom: 0.25rem;
+  color: #ffffff;
+  font-size: 0.9rem;
+}
+
+.eci-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border-dark, #444);
+  border-radius: 4px;
+  background: var(--color-bg-option, #4a4a4a);
+  color: #ffffff;
+  font-size: 0.9rem;
+}
+
+.eci-input:focus {
+  outline: none;
+  border-color: var(--color-border-highlight, #0078d4);
+  box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.3);
+}
+
+.eci-input::placeholder {
+  color: #888888;
+}
+
+.eci-help {
+  display: block;
+  font-size: 0.8rem;
+  color: #aaaaaa;
+  margin-top: 0.25rem;
+  line-height: 1.3;
+}
+
+/* Remote Service Status */
+.eci-status.remote-configured {
+  background-color: rgba(0, 123, 255, 0.1);
+  color: #007bff;
+  border: 1px solid rgba(0, 123, 255, 0.3);
+}
+
 /* Form Footer */
 .form-footer {
   display: flex;
