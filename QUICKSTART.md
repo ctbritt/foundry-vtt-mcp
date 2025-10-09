@@ -28,7 +28,7 @@ Should complete in ~90 seconds, not stay in queue.
 
 ### 2. Restart MCP Server
 
-On `foundry.azthir-terra.com`:
+On your remote server:
 
 ```bash
 # Stop existing MCP server
@@ -62,10 +62,10 @@ On your **M1 or M2 Mac**:
     "foundry-mcp": {
       "command": "ssh",
       "args": [
-        "foundry@foundry.azthir-terra.com",
+        "your-user@your-foundry-server.com",
         "-p", "22",
         "node",
-        "/home/foundry/foundry-vtt-mcp/packages/mcp-server/dist/index.js"
+        "/path/to/foundry-vtt-mcp/packages/mcp-server/dist/index.js"
       ],
       "env": {
         "LOG_LEVEL": "info"
@@ -122,12 +122,12 @@ clear pool, and scattered ruins
 
 ### "MCP backend not connected"
 - Restart Claude Desktop
-- Verify SSH key auth works: `ssh foundry@foundry.azthir-terra.com`
+- Verify SSH key auth works to your server
 - Check MCP server logs
 
 ### "S3 upload failed"
 - Verify credentials in `.env`
-- Test: `aws s3 ls s3://rime-of-the-frostmaiden`
+- Test: `aws s3 ls s3://your-bucket-name`
 - Check bucket permissions
 
 ---
