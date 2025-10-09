@@ -758,7 +758,16 @@ async function processMapGenerationInBackend(jobId: string, jobQueue: any, comfy
     const healthInfo = await comfyuiClient.checkHealth();
     await fs2.appendFile(processDebugLog, `[${new Date().toISOString()}] Health check: ${JSON.stringify(healthInfo)}\n`);
     if (!healthInfo.available) {
-      await comfyuiClient.startService();
+      // Only attempt auto-start if explicitly enabled
+      const autoStart = process.env.COMFYUI_AUTO_START !== 'false';
+      if (autoStart) {
+        await comfyuiClient.startService();
+      } else {
+        // In remote mode, log and throw error if ComfyUI is not available
+        const errorMsg = 'ComfyUI is not available. In remote mode, ensure your remote ComfyUI instance is running and accessible via SSH tunnel.';
+        await fs2.appendFile(processDebugLog, `[${new Date().toISOString()}] ERROR: ${errorMsg}\n`);
+        throw new Error(errorMsg);
+      }
     }
 
     await jobQueue.updateJobProgress(jobId, 25, 'Submitting to ComfyUI...');
@@ -1065,11 +1074,13 @@ async function startBackend(): Promise<void> {
       config: {
         host: process.env.COMFYUI_HOST || '127.0.0.1',
         port: config.comfyui?.port || parseInt(process.env.COMFYUI_PORT || '31411', 10),
-        installPath: process.env.COMFYUI_PATH || undefined
+        installPath: process.env.COMFYUI_PATH || undefined,
+        autoStart: process.env.COMFYUI_AUTO_START !== 'false'
       }
     });
 
-    logger.info('Map generation backend components initialized (ComfyUI on localhost:31411)');
+    const comfyuiPort = config.comfyui?.port || parseInt(process.env.COMFYUI_PORT || '31411', 10);
+    logger.info(`Map generation backend components initialized (ComfyUI on ${process.env.COMFYUI_HOST || '127.0.0.1'}:${comfyuiPort})`);
   } catch (error) {
     logger.warn('Failed to initialize map generation components', { error });
   }

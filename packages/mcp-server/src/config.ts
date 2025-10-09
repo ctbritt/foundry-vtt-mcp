@@ -72,8 +72,8 @@ const rawConfig = {
     }
   },
   comfyui: {
-    // ComfyUI always runs locally on the same machine as the MCP server (localhost:31411)
-    port: 31411
+    // ComfyUI port can be configured via COMFYUI_PORT environment variable
+    port: parseInt(process.env.COMFYUI_PORT || '31411', 10)
   },
   server: {
     name: process.env.SERVER_NAME || 'foundry-mcp-server',
