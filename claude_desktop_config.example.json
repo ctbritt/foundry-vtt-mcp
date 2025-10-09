@@ -1,16 +1,52 @@
 {
   "mcpServers": {
     "foundry-mcp": {
-      "command": "node",
+      "command": "ssh",
       "args": [
-        "D:/Projects/FVTTMCP/packages/mcp-server/dist/index.js"
+        "foundry@foundry.azthir-terra.com",
+        "-p", "22",
+        "node",
+        "/home/foundry/foundry-vtt-mcp/packages/mcp-server/dist/index.js"
       ],
       "env": {
-        "LOG_LEVEL": "info",
-        "FOUNDRY_HOST": "localhost",
-        "FOUNDRY_PORT": "31415",
-        "FOUNDRY_NAMESPACE": "/foundry-mcp"
+        "LOG_LEVEL": "info"
       }
     }
   }
 }
+
+// Alternative: Local execution (Windows)
+// {
+//   "mcpServers": {
+//     "foundry-mcp": {
+//       "command": "node",
+//       "args": [
+//         "D:/Projects/FVTTMCP/packages/mcp-server/dist/index.js"
+//       ],
+//       "env": {
+//         "LOG_LEVEL": "info",
+//         "FOUNDRY_HOST": "localhost",
+//         "FOUNDRY_PORT": "31415",
+//         "FOUNDRY_NAMESPACE": "/foundry-mcp"
+//       }
+//     }
+//   }
+// }
+
+// Alternative: Via Tailscale IP
+// {
+//   "mcpServers": {
+//     "foundry-mcp": {
+//       "command": "ssh",
+//       "args": [
+//         "foundry@100.x.y.z",
+//         "-p", "22",
+//         "node",
+//         "/home/foundry/foundry-vtt-mcp/packages/mcp-server/dist/index.js"
+//       ],
+//       "env": {
+//         "LOG_LEVEL": "info"
+//       }
+//     }
+//   }
+// }

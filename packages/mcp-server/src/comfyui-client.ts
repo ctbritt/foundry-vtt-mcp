@@ -5,6 +5,13 @@ import * as os from 'os';
 import axios from 'axios';
 import { Logger } from './logger.js';
 
+/**
+ * ComfyUI Client for local or direct HTTP access to ComfyUI instances
+ * 
+ * For RunPod serverless endpoints, use RunPodClient instead.
+ * For direct RunPod pod instances, this client can be used with remoteUrl config.
+ */
+
 export interface ComfyUIWorkflowInput {
   prompt: string;
   width: number;

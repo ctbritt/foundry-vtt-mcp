@@ -3,6 +3,30 @@ CLAUDE.md
 DISTRIBUTION.md  
 RELEASE-PROCESS.md
 runpod_info.md
+Caddyfile.example
+REMOTE_SETUP.md
+claude_desktop_config.example.json
+.specstory/
+.cursor/
+
+# Sensitive Configuration & Credentials
+.env
+.env.*
+!.env.example
+!env.template
+*.pem
+*.key
+*.crt
+*-credentials.json
+*-config.json
+!*example*.json
+!*template*.json
+
+# Debug & Test Logs (may contain sensitive data)
+*-debug.log
+process-*.log
+backend-handler-debug.log
+foundry-mcp-upload-debug.log
 
 # Dependencies
 node_modules/

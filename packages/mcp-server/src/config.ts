@@ -37,8 +37,22 @@ const ConfigSchema = z.object({
     })
   }),
   comfyui: z.object({
-    // ComfyUI always runs locally on the same machine as the MCP server
     port: z.number().min(1024).max(65535).default(31411),
+    remoteUrl: z.string().optional(), // For direct RunPod pod access
+    autoStart: z.boolean().default(true),
+  }),
+  runpod: z.object({
+    enabled: z.boolean().default(false),
+    apiKey: z.string().optional(),
+    endpointId: z.string().optional(),
+    apiUrl: z.string().optional(),
+  }),
+  s3: z.object({
+    bucket: z.string().optional(),
+    region: z.string().default('us-east-1'),
+    accessKeyId: z.string().optional(),
+    secretAccessKey: z.string().optional(),
+    publicBaseUrl: z.string().optional(), // CDN URL
   }),
   server: z.object({
     name: z.string().default('foundry-mcp-server'),
@@ -72,8 +86,22 @@ const rawConfig = {
     }
   },
   comfyui: {
-    // ComfyUI port can be configured via COMFYUI_PORT environment variable
-    port: parseInt(process.env.COMFYUI_PORT || '31411', 10)
+    port: parseInt(process.env.COMFYUI_PORT || '31411', 10),
+    remoteUrl: process.env.COMFYUI_REMOTE_URL,
+    autoStart: process.env.COMFYUI_AUTO_START !== 'false',
+  },
+  runpod: {
+    enabled: process.env.RUNPOD_ENABLED === 'true',
+    apiKey: process.env.RUNPOD_API_KEY,
+    endpointId: process.env.RUNPOD_ENDPOINT_ID,
+    apiUrl: process.env.RUNPOD_API_URL,
+  },
+  s3: {
+    bucket: process.env.S3_BUCKET,
+    region: process.env.S3_REGION || 'us-east-1',
+    accessKeyId: process.env.S3_ACCESS_KEY_ID,
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
+    publicBaseUrl: process.env.S3_PUBLIC_BASE_URL,
   },
   server: {
     name: process.env.SERVER_NAME || 'foundry-mcp-server',
