@@ -14,6 +14,9 @@ runpod_info.md
 Caddyfile.example
 REMOTE_SETUP.md
 claude_desktop_config.example.json
+SECURITY.md
+.prettierrc
+.claude/
 
 # IDE and tools
 .vscode/
@@ -62,7 +65,3 @@ pnpm-lock.yaml
 
 # TypeScript
 *.tsbuildinfo
-
-# IDE-specific files
-.cursorignore
-.eslintrc.json
