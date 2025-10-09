@@ -395,8 +395,14 @@ class FoundryMCPBridge {
     try {
       // Check if ComfyUI monitoring is needed
       const autoStart = this.settings.getSetting('mapGenAutoStart') || false;
-      if (!autoStart) {
-        console.log(`[${MODULE_ID}] ComfyUI auto-start disabled, skipping monitoring`);
+      const serviceMode = this.settings.getSetting('mapGenServiceMode') || 'local';
+      
+      if (!autoStart || serviceMode === 'remote') {
+        if (serviceMode === 'remote') {
+          console.log(`[${MODULE_ID}] Remote service mode enabled, skipping local ComfyUI monitoring`);
+        } else {
+          console.log(`[${MODULE_ID}] ComfyUI auto-start disabled, skipping monitoring`);
+        }
         return;
       }
 
