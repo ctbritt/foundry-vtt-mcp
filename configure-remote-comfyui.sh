@@ -59,7 +59,7 @@ echo "1. On your Mac, start ComfyUI:"
 echo "   cd ~/ComfyUI && python3 main.py --listen 0.0.0.0 --port 8188"
 echo
 echo "2. In another terminal on your Mac, create the reverse SSH tunnel:"
-echo "   ssh -R 8188:localhost:8188 foundry@foundry.azthir-terra.com -N"
+echo "   ssh -R 8188:localhost:8188 your-user@your-server.com -N"
 echo
 echo "3. Test the connection from this server:"
 echo "   curl http://127.0.0.1:8188/system_stats"
