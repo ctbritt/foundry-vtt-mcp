@@ -12,11 +12,12 @@ export COMFYUI_LISTEN="127.0.0.1"
 # Optional: Set logging for debugging
 export LOG_LEVEL="info"
 
-echo "Starting Foundry MCP Server with ComfyUI integration..."
-echo "ComfyUI Path: $COMFYUI_PATH"
-echo "ComfyUI Host: $COMFYUI_HOST"
-echo "ComfyUI Port: $COMFYUI_PORT"
-echo ""
+# Debug output to stderr (won't interfere with MCP JSON protocol on stdout)
+echo "Starting Foundry MCP Server with ComfyUI integration..." >&2
+echo "ComfyUI Path: $COMFYUI_PATH" >&2
+echo "ComfyUI Host: $COMFYUI_HOST" >&2
+echo "ComfyUI Port: $COMFYUI_PORT" >&2
+echo "" >&2
 
 # Start the MCP server
 node /home/foundry/foundry-vtt-mcp/packages/mcp-server/dist/index.js "$@"
