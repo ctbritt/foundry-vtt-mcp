@@ -62,3 +62,7 @@ pnpm-lock.yaml
 
 # TypeScript
 *.tsbuildinfo
+
+# IDE-specific files
+.cursorignore
+.eslintrc.json
