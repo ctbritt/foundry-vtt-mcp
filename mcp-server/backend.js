@@ -15,7 +15,7 @@ import { DiceRollTools } from './tools/dice-roll.js';
 import { CampaignManagementTools } from './tools/campaign-management.js';
 import { OwnershipTools } from './tools/ownership.js';
 import { MapGenerationTools } from './tools/map-generation.js';
-const CONTROL_HOST = '127.0.0.1';
+const CONTROL_HOST = '0.0.0.0'; // Listen on all interfaces for Tailscale access
 const CONTROL_PORT = 31414;
 const LOCK_FILE = path.join(os.tmpdir(), 'foundry-mcp-backend.lock');
 function getBundledPythonPath() {
