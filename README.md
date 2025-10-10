@@ -4,6 +4,8 @@ Connect Foundry VTT to Claude Desktop for AI-powered campaign management through
 
 This fork extends the original [Foundry VTT MCP Bridge](https://github.com/adambdooley/foundry-vtt-mcp) by [Adam Dooley](https://github.com/adambdooley) with AI-powered battlemap generation capabilities using RunPod serverless ComfyUI.
 
+> **📚 For the simplified setup guide for this specific deployment, see [QUICKSTART.md](QUICKSTART.md)**
+
 ## Features
 
 ### Core MCP Bridge Features
