@@ -174,6 +174,8 @@ Access via Module Settings → Foundry MCP Bridge:
 
 ## Usage Examples
 
+### Core Features
+
 Once connected, ask Claude Desktop:
 
 - *"Show me my character Clark's stats"*
@@ -182,6 +184,89 @@ Once connected, ask Claude Desktop:
 - *"Roll a stealth check for Tulkas"*
 - *"What's in the current Foundry scene?"*
 - *"Generate a 1536x1536 forest battlemap with a river and bridge"*
+
+### Storytelling & Narrative (NEW!)
+
+- *"Track a story beat: The players discovered the villain's identity"*
+- *"Create a plot thread about the missing artifact with high priority"*
+- *"Define a rivalry relationship between Lord Blackwood and Lady Sterling"*
+- *"Generate a hard encounter for a level 5 party of 4 against undead"*
+- *"Create a mysterious letter handout for the players about a secret meeting"*
+- *"Set the scene mood to 'horror' for this dark dungeon"*
+
+### Session Management (NEW!)
+
+- *"Track these session notes: The party defeated the dragon and found the treasure"*
+- *"Create a narrative recap of session 12"*
+- *"Start initiative and add the goblin chieftain with initiative 15"*
+- *"Check party resources and remaining HP"*
+- *"Apply a short rest to restore party resources"*
+
+### World Building (NEW!)
+
+- *"Create a town called Riverdale with 2000 population, ruled by Mayor Thompson"*
+- *"Create a thieves guild faction with secret headquarters"*
+- *"Add a timeline event: The Great War began on Year 1202"*
+- *"Generate 3 quest hook rumors about treasure for the local tavern"*
+- *"Send a secret message to Alice: 'You notice the merchant is lying'"*
+
+## Available MCP Tools
+
+### Core Tools (20+)
+
+**Character & Actor Management:**
+- `get-character` - Retrieve detailed character information
+- `list-characters` - List all available characters
+- `create-actor` - Create new actors/NPCs from descriptions
+- `set-actor-ownership` - Manage player permissions
+- `get-actor-ownership` - Check ownership settings
+
+**Compendium & Search:**
+- `search-compendium` - Natural language search of items/spells
+- `search-creatures` - Enhanced creature search with CR filtering
+
+**Quest & Campaign:**
+- `create-quest` - Generate quests from prompts
+- `list-campaigns` - View campaign structure
+- `create-campaign-part` - Add multi-part quest sections
+
+**Scene & World:**
+- `get-scene-info` - Current scene details
+- `list-scenes` - All available scenes
+- `switch-scene` - Change active scene
+
+**Dice & Combat:**
+- `roll-dice` - Roll dice with modifiers
+- `request-roll` - Request rolls from specific players
+- `send-chat-message` - Send messages to chat
+
+**Map Generation (ComfyUI):**
+- `generate-map` - AI battlemap generation
+- `check-map-status` - Check generation progress
+- `cancel-map-job` - Cancel running generation
+
+### NEW Tools (15+)
+
+**Storytelling & Narrative:**
+- `create-story-beat` - Track dramatic story moments
+- `manage-plot-threads` - Track plot threads and foreshadowing
+- `create-npc-relationship` - Define character relationships
+- `generate-encounter` - Create balanced combat encounters
+- `create-handout` - Generate formatted player handouts
+- `set-mood-lighting` - Adjust scene atmosphere
+
+**Session Management:**
+- `track-session-notes` - Record session events and decisions
+- `create-recap` - Generate session recaps
+- `manage-initiative` - Advanced initiative tracking
+- `track-resources` - Monitor party HP, spells, items
+
+**World Building:**
+- `create-location` - Detailed location entries
+- `create-faction` - Organizations with goals and relationships
+- `manage-timeline` - Track calendar and historical events
+- `create-rumors` - Generate rumors and quest hooks
+- `send-secret-message` - Private whispers to specific players
 
 ## Security
 
@@ -202,10 +287,53 @@ All sensitive configuration (API keys, credentials) is:
 ## Troubleshooting
 
 ### MCP Server Won't Connect
-- Verify Foundry VTT is running and world is loaded
-- Check `FOUNDRY_PORT` matches your Foundry port (default: 31415)
-- Restart Claude Desktop
-- Check MCP server logs for errors
+- **Verify Foundry VTT is running** and world is loaded
+- **Check `FOUNDRY_PORT`** matches your Foundry port (default: 31415)
+- **Restart Claude Desktop** completely (quit and reopen)
+- **Check MCP server logs** for errors:
+  ```bash
+  tail -f /tmp/foundry-mcp-server/mcp-server.log
+  tail -f /tmp/foundry-mcp-server/wrapper.log
+  ```
+- **Verify Claude config path**:
+  ```bash
+  cat ~/.config/Claude/claude_desktop_config.json
+  ```
+- **Test MCP server manually**:
+  ```bash
+  node /path/to/dist/mcp-server/index.js
+  ```
+
+### Module Not Showing in Foundry
+- Check module.json exists in `modules/foundry-mcp-bridge/`
+- Verify Foundry VTT version is 13
+- Check browser console (F12) for errors
+- Restart Foundry VTT completely
+
+### Backend Won't Start
+- **Kill existing processes**:
+  ```bash
+  pkill -f backend.js
+  rm /tmp/foundry-mcp-backend.lock
+  ```
+- **Check port availability**:
+  ```bash
+  ss -tlnp | grep 31414
+  ```
+- **Verify node_modules installed**:
+  ```bash
+  ls dist/mcp-server/node_modules/@modelcontextprotocol/
+  ```
+
+### Missing Dependencies
+If you see `ERR_MODULE_NOT_FOUND` errors:
+1. Clone and build from source:
+   ```bash
+   git clone https://github.com/adambdooley/foundry-vtt-mcp.git
+   cd foundry-vtt-mcp && npm install && npm run build
+   ```
+2. Copy built files to module directory
+3. Run the install script: `./install-claude-config.sh`
 
 ### RunPod Jobs Stuck in Queue
 - Verify RunPod account has credits
@@ -216,6 +344,12 @@ All sensitive configuration (API keys, credentials) is:
 - Verify AWS credentials in `.env`
 - Check S3 bucket permissions (public read access)
 - Ensure bucket region matches `S3_REGION`
+
+### Connection Lost During Session
+- Check **Auto-Reconnect** setting in Module Settings
+- Verify network stability
+- Check Foundry console for WebSocket/WebRTC errors
+- Try switching connection type (WebSocket ↔ WebRTC)
 
 ## Development
 

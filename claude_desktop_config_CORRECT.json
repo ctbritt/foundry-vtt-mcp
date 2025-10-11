@@ -1,0 +1,15 @@
+{
+    "mcpServers": {
+        "foundry-mcp": {
+            "command": "ssh",
+            "args": [
+                "foundry@foundry",
+                "cd /home/foundry/foundryuserdata/Data/modules/foundry-mcp-bridge/dist/mcp-server && node index.js"
+            ],
+            "env": {
+                "FOUNDRY_HOST": "localhost",
+                "FOUNDRY_PORT": "31415"
+            }
+        }
+    }
+}
