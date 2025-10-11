@@ -1,25 +1,31 @@
 # Foundry MCP Bridge - Setup Instructions
 
-## Quick Setup (5 minutes)
+## Quick Setup
 
 ### 1. Module Installation ✅
-The module is already installed at:
-```
-/home/foundry/foundryuserdata/Data/modules/foundry-mcp-bridge
-```
+Module installed at: `/home/foundry/foundryuserdata/Data/modules/foundry-mcp-bridge`
 
-### 2. Claude Desktop Configuration
+### 2. Enable Module in Foundry
 
-Copy this configuration to your Claude Desktop config file:
+1. Open https://foundry.azthir-terra.com
+2. Load your world
+3. Settings → Manage Modules
+4. Check "Foundry MCP Bridge"
+5. Save → Reload world
 
-**Location:** `~/.config/Claude/claude_desktop_config.json`
+### 3. Claude Desktop Configuration (On Your Mac)
+
+**Location:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 
 ```json
 {
   "mcpServers": {
     "foundry-mcp": {
-      "command": "node",
-      "args": ["/home/foundry/foundryuserdata/Data/modules/foundry-mcp-bridge/dist/mcp-server/index.js"],
+      "command": "ssh",
+      "args": [
+        "foundry@foundry",
+        "cd /home/foundry/foundryuserdata/Data/modules/foundry-mcp-bridge/dist/mcp-server && NODE_PATH=$PWD/node_modules node index.js"
+      ],
       "env": {
         "FOUNDRY_HOST": "localhost",
         "FOUNDRY_PORT": "31415"
@@ -29,10 +35,7 @@ Copy this configuration to your Claude Desktop config file:
 }
 ```
 
-**Quick Copy Command:**
-```bash
-cp /home/foundry/foundryuserdata/Data/modules/foundry-mcp-bridge/claude_desktop_config.json ~/.config/Claude/claude_desktop_config.json
-```
+**Note:** SSH must work without password. If needed: `ssh-copy-id foundry@foundry`
 
 ### 3. Start Foundry VTT
 
@@ -137,25 +140,32 @@ Once connected, Claude has access to 20+ tools:
 - `generate-map` - AI battlemap generation
 - `check-map-status` - Check generation progress
 
-## Next Steps
+## Module Configuration
 
-### Enable Enhanced Creature Index
+### Enhanced Creature Index (Faster Searches)
 
-1. In Foundry, go to **Module Settings** → **Foundry MCP Bridge**
-2. Click **"Configure Enhanced Index"**
-3. Check **"Enable Enhanced Creature Index"**
-4. Click **"Rebuild Creature Index"**
+1. Module Settings → Foundry MCP Bridge → "Configure Enhanced Index"
+2. **Select which compendium packs to index** (uncheck packs you don't use for faster searches)
+3. Check "Enable Enhanced Creature Index"
+4. Click "Rebuild Creature Index"
 
-This enables instant AI searches for creatures by CR, type, and abilities!
+### Map Generation Setup
 
-### Test Advanced Features
+1. Module Settings → Foundry MCP Bridge → "Configure Map Generation"
+2. Choose service mode:
+   - **Local ComfyUI:** Runs on Foundry server (requires ComfyUI installation)
+   - **Remote RunPod:** Cloud GPU service (requires RunPod account + API key)
+3. Enter credentials if using Remote
+4. Save settings
 
-Try asking Claude:
-- "Create a quest about investigating a haunted lighthouse"
-- "Find all CR 5 undead creatures"
-- "Roll a stealth check for my character named [CharacterName]"
-- "What's in the current scene?"
-- "Generate a 1536x1536 tavern battlemap" (requires ComfyUI)
+## Test Commands
+
+```
+List all characters
+Find CR 5 undead creatures
+What's in the current scene?
+Generate a medium tavern battlemap
+```
 
 ## Support
 
