@@ -6,18 +6,21 @@
 import { MODULE_ID } from './constants.js';
 import { FoundryWSClient } from './ws-client.js';
 import { QueryHandlers } from './queries.js';
-import { ModuleSettingsV2 } from './settings-v2.js';
+import { ModuleSettings } from './settings.js';
+import { ComfyUIManager } from './comfyui-manager.js';
 
 class FoundryMCPBridgeV2 {
   private wsClient: FoundryWSClient | null = null;
   private queryHandlers: QueryHandlers;
-  private settings: ModuleSettingsV2;
+  private settings: ModuleSettings;
+  public comfyuiManager: ComfyUIManager;
   private _isInitialized = false;
   private pingInterval: number | null = null;
 
   constructor() {
     this.queryHandlers = new QueryHandlers();
-    this.settings = new ModuleSettingsV2();
+    this.settings = new ModuleSettings();
+    this.comfyuiManager = new ComfyUIManager();
   }
 
   /**
