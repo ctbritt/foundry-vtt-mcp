@@ -60,7 +60,7 @@ export class ModuleSettings {
     (game.settings as any).registerMenu(this.moduleId, 'mapGenerationSettings', {
       name: 'Map Generation Service Configuration',
       label: 'Configure Map Generation',
-      hint: 'Configure your map generation service for AI-powered battlemap creation. Currently supports ComfyUI installations with plans for future cloud services.',
+      hint: 'Configure your map generation service for AI-powered battlemap creation. Supports local ComfyUI or RunPod serverless.',
       icon: 'fas fa-cogs',
       type: class extends FormApplication {
         static get defaultOptions() {
@@ -76,8 +76,11 @@ export class ModuleSettings {
 
         getData(): any {
           return {
+            serviceType: game.settings.get(MODULE_ID, 'mapGenServiceType') || 'local',
             autoStartService: game.settings.get(MODULE_ID, 'mapGenAutoStart') || true,
             mapGenQuality: game.settings.get(MODULE_ID, 'mapGenQuality') || 'low',
+            runpodApiKey: game.settings.get(MODULE_ID, 'runpodApiKey') || '',
+            runpodEndpoint: game.settings.get(MODULE_ID, 'runpodEndpoint') || '',
             connectionStatus: this.getConnectionStatus(),
             connectionStatusText: this.getConnectionStatusText()
           };
@@ -94,6 +97,24 @@ export class ModuleSettings {
 
         activateListeners(html: JQuery) {
           super.activateListeners(html);
+
+          // Service type change handler - toggle visibility of sections
+          html.find('#serviceType').change((event: any) => {
+            const serviceType = event.target.value;
+            const localSection = html.find('#local-service-section');
+            const runpodSection = html.find('#runpod-config-section');
+            const autoStartCheck = html.find('#auto-start-check');
+
+            if (serviceType === 'runpod') {
+              localSection.hide();
+              runpodSection.show();
+              autoStartCheck.hide();
+            } else {
+              localSection.show();
+              runpodSection.hide();
+              autoStartCheck.show();
+            }
+          });
 
           // Service control buttons
           html.find('#check-status-btn').click(async () => {
@@ -172,8 +193,11 @@ export class ModuleSettings {
         }
 
         async _updateObject(_event: Event, formData: any) {
+          await game.settings.set(MODULE_ID, 'mapGenServiceType', formData.serviceType);
           await game.settings.set(MODULE_ID, 'mapGenAutoStart', formData.autoStartService);
           await game.settings.set(MODULE_ID, 'mapGenQuality', formData.mapGenQuality);
+          await game.settings.set(MODULE_ID, 'runpodApiKey', formData.runpodApiKey);
+          await game.settings.set(MODULE_ID, 'runpodEndpoint', formData.runpodEndpoint);
           ui.notifications?.info('Map generation service settings saved successfully');
         }
       },
@@ -301,6 +325,47 @@ export class ModuleSettings {
         'high': 'High'
       },
       default: 'low',
+    });
+
+    // RunPod Serverless settings
+    game.settings.register(this.moduleId, 'mapGenServiceType', {
+      name: 'Map Generation Backend',
+      hint: 'Choose between local ComfyUI or RunPod serverless',
+      scope: 'world',
+      config: false, // Hidden from main config, accessible via submenu only
+      type: String,
+      choices: {
+        'local': 'Local ComfyUI',
+        'runpod': 'RunPod Serverless'
+      },
+      default: 'local',
+    });
+
+    game.settings.register(this.moduleId, 'runpodApiKey', {
+      name: 'RunPod API Key',
+      hint: 'Your RunPod API key for serverless endpoints',
+      scope: 'world',
+      config: false, // Hidden from main config, accessible via submenu only
+      type: String,
+      default: '',
+    });
+
+    game.settings.register(this.moduleId, 'runpodEndpoint', {
+      name: 'RunPod Endpoint ID',
+      hint: 'Your RunPod serverless endpoint ID',
+      scope: 'world',
+      config: false, // Hidden from main config, accessible via submenu only
+      type: String,
+      default: '',
+    });
+
+    game.settings.register(this.moduleId, 'useTwoStageWorkflow', {
+      name: 'Use Two-Stage Workflow (RunPod)',
+      hint: 'For RunPod only: Generate at lower resolution with base model, then upscale and refine with upscale model. Better quality but takes longer.',
+      scope: 'world',
+      config: true, // Show in main config for easy access
+      type: Boolean,
+      default: false,
     });
 
     // ============================================================================

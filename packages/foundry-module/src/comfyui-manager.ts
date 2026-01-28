@@ -1,11 +1,13 @@
 import { MODULE_ID } from './constants.js';
+import { RunPodClient, MapGenerationParams } from './runpod-client.js';
 
 /**
- * ComfyUI Service Manager - adapted from working foundry-mcp-mapgen implementation
+ * ComfyUI Service Manager - supports both local ComfyUI and RunPod serverless backends
  */
 export class ComfyUIManager {
   private serviceStatus: string = 'unknown';
   private isStarting: boolean = false;
+  private runpodClient: RunPodClient | null = null;
 
   async checkStatus(): Promise<{ status: string; message?: string; phase?: string }> {
     try {
@@ -315,16 +317,231 @@ export class ComfyUIManager {
   }
 
   /**
-   * Generate a map using ComfyUI
+   * Get the configured service type
    */
-  async generateMap(data: { prompt: string; size?: string; grid_size?: number }): Promise<any> {
-    try {
-      const bridge = (globalThis as any).foundryMCPBridge;
-      if (!bridge?.socketBridge?.isConnected()) {
-        return { success: false, error: 'Backend not connected' };
+  getServiceType(): 'local' | 'runpod' {
+    return (game.settings.get(MODULE_ID, 'mapGenServiceType') as 'local' | 'runpod') || 'local';
+  }
+
+  /**
+   * Initialize RunPod client if needed
+   */
+  initializeRunPodClient(): RunPodClient | null {
+    if (this.runpodClient) {
+      return this.runpodClient;
+    }
+
+    const apiKey = game.settings.get(MODULE_ID, 'runpodApiKey') as string;
+    const endpointId = game.settings.get(MODULE_ID, 'runpodEndpoint') as string;
+
+    if (!apiKey || !endpointId) {
+      console.error(`[${MODULE_ID}] RunPod API key or endpoint not configured`);
+      return null;
+    }
+
+    this.runpodClient = new RunPodClient(apiKey, endpointId);
+    return this.runpodClient;
+  }
+
+  /**
+   * Start polling RunPod job and handle completion
+   */
+  async pollRunPodJob(jobId: string, params: { scene_name: string; grid_size: number }): Promise<void> {
+    const client = this.initializeRunPodClient();
+    if (!client) return;
+
+    console.log(`[${MODULE_ID}] Starting RunPod job polling for ${jobId}`);
+
+    const maxPolls = 60; // 5 minutes at 5 second intervals
+    let pollCount = 0;
+
+    while (pollCount < maxPolls) {
+      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+      pollCount++;
+
+      const statusResult = await client.checkStatus(jobId);
+
+      if (!statusResult.success) {
+        console.error(`[${MODULE_ID}] Failed to check RunPod status:`, statusResult.error);
+        return;
       }
 
-      return await this.sendBackendRequest('generate-map-request', data);
+      const job = statusResult.job!;
+      console.log(`[${MODULE_ID}] RunPod job status poll ${pollCount}:`, job.status);
+
+      if (job.status === 'complete') {
+        console.log(`[${MODULE_ID}] RunPod job completed, processing result`);
+        await this.handleRunPodCompletion(jobId, job, params);
+        return;
+      } else if (job.status === 'failed') {
+        console.error(`[${MODULE_ID}] RunPod job failed:`, job.error);
+        ui.notifications?.error(`Map generation failed: ${job.error || 'Unknown error'}`);
+        return;
+      }
+    }
+
+    console.error(`[${MODULE_ID}] RunPod job polling timeout after ${maxPolls} polls`);
+    ui.notifications?.warn('Map generation timed out. Check RunPod dashboard for status.');
+  }
+
+  /**
+   * Handle RunPod job completion - extract image and create scene
+   */
+  async handleRunPodCompletion(
+    _jobId: string, 
+    job: { result?: any; error?: string }, 
+    params: { scene_name: string; grid_size: number }
+  ): Promise<void> {
+    try {
+      const client = this.initializeRunPodClient();
+      if (!client) return;
+
+      console.log(`[${MODULE_ID}] RunPod job result structure:`, JSON.stringify(job, null, 2));
+
+      // Extract image from RunPod output
+      if (!job.result) {
+        throw new Error('No result in RunPod output');
+      }
+
+      if (!job.result.images) {
+        console.error(`[${MODULE_ID}] No images field in result. Result keys:`, Object.keys(job.result));
+        throw new Error('No images in RunPod output');
+      }
+
+      if (!Array.isArray(job.result.images) || job.result.images.length === 0) {
+        throw new Error('Images array is empty in RunPod output');
+      }
+
+      const imageData = job.result.images[0];
+      console.log(`[${MODULE_ID}] Downloading image from RunPod, type:`, typeof imageData);
+
+      // Download and convert to base64
+      const base64Image = await client.downloadImage(imageData);
+
+      // Create filename
+      const timestamp = Date.now();
+      const filename = `runpod-battlemap-${timestamp}.png`;
+
+      console.log(`[${MODULE_ID}] Uploading image to Foundry: ${filename}`);
+
+      // Upload to Foundry using existing upload handler
+      const bridge = (globalThis as any).foundryMCPBridge;
+      if (bridge?.queryHandlers) {
+        const uploadResult = await bridge.queryHandlers.handleUploadGeneratedMap({
+          filename: filename,
+          imageData: base64Image
+        });
+
+        if (!uploadResult.success) {
+          throw new Error(`Upload failed: ${uploadResult.error}`);
+        }
+
+        const imagePath = uploadResult.path;
+        console.log(`[${MODULE_ID}] Image uploaded successfully: ${imagePath}`);
+
+        // Create scene with the uploaded image
+        const sceneName = params.scene_name;
+        const gridSize = params.grid_size;
+
+        console.log(`[${MODULE_ID}] Creating scene: ${sceneName} with image: ${imagePath}`);
+
+        // Create minimal scene first
+        const sceneData: any = {
+          name: sceneName,
+          padding: 0.1
+        };
+
+        const scene = await (Scene as any).create(sceneData);
+        console.log(`[${MODULE_ID}] Scene created with ID:`, scene?.id);
+
+        // CRITICAL: Foundry v14 requires updating the scene after creation to set background
+        if (scene) {
+          console.log(`[${MODULE_ID}] Updating scene with background image and grid`);
+
+          const updateData: any = {
+            'background.src': imagePath,
+            'grid.size': gridSize,
+            'grid.distance': 5,
+            'grid.units': 'ft'
+          };
+
+          console.log(`[${MODULE_ID}] Update data:`, updateData);
+          await scene.update(updateData);
+          console.log(`[${MODULE_ID}] Scene updated successfully`);
+
+          // Verify the update worked
+          const updated = (game.scenes as any).get(scene.id);
+          console.log(`[${MODULE_ID}] Verification - background.src:`, updated?.background?.src);
+        }
+
+        ui.notifications?.info(`Map "${sceneName}" created successfully!`);
+      }
+    } catch (error) {
+      console.error(`[${MODULE_ID}] Error handling RunPod completion:`, error);
+      ui.notifications?.error(`Failed to process generated map: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Generate a map using ComfyUI (local or RunPod)
+   */
+  async generateMap(data: { 
+    prompt: string; 
+    scene_name: string;
+    size?: string; 
+    grid_size?: number;
+    quality?: string;
+    twoStage?: boolean;
+  }): Promise<any> {
+    try {
+      const serviceType = this.getServiceType();
+      console.log(`[${MODULE_ID}] Generating map using ${serviceType} service`);
+
+      if (serviceType === 'runpod') {
+        // Use RunPod serverless
+        const client = this.initializeRunPodClient();
+        if (!client) {
+          return {
+            success: false,
+            error: 'RunPod not configured. Please set API key and endpoint in settings.'
+          };
+        }
+
+        // Get quality and workflow settings from module settings
+        const quality = (game.settings.get(MODULE_ID, 'mapGenQuality') as string) || 'low';
+        const useTwoStage = game.settings.get(MODULE_ID, 'useTwoStageWorkflow') as boolean || false;
+
+        const params: MapGenerationParams = {
+          prompt: data.prompt.trim(),
+          scene_name: data.scene_name.trim(),
+          size: (data.size as 'small' | 'medium' | 'large') || 'medium',
+          grid_size: data.grid_size || 70,
+          quality: (quality as 'low' | 'medium' | 'high'),
+          twoStage: data.twoStage ?? useTwoStage // Use setting as default, allow override
+        };
+
+        const result = await client.generateMap(params);
+
+        // Start background polling to handle completion
+        if (result.success && result.jobId) {
+          this.pollRunPodJob(result.jobId, {
+            scene_name: data.scene_name,
+            grid_size: data.grid_size || 70
+          }).catch(error => {
+            console.error(`[${MODULE_ID}] Error in RunPod polling:`, error);
+          });
+        }
+
+        return result;
+      } else {
+        // Use local ComfyUI via backend
+        const bridge = (globalThis as any).foundryMCPBridge;
+        if (!bridge?.socketBridge?.isConnected()) {
+          return { success: false, error: 'Backend not connected' };
+        }
+
+        return await this.sendBackendRequest('generate-map-request', data);
+      }
     } catch (error) {
       return {
         success: false,
@@ -338,12 +555,28 @@ export class ComfyUIManager {
    */
   async checkMapStatus(data: { job_id: string }): Promise<any> {
     try {
-      const bridge = (globalThis as any).foundryMCPBridge;
-      if (!bridge?.socketBridge?.isConnected()) {
-        return { success: false, error: 'Backend not connected' };
-      }
+      const serviceType = this.getServiceType();
 
-      return await this.sendBackendRequest('check-map-status-request', data);
+      if (serviceType === 'runpod') {
+        // Use RunPod serverless
+        const client = this.initializeRunPodClient();
+        if (!client) {
+          return {
+            success: false,
+            error: 'RunPod not configured. Please set API key and endpoint in settings.'
+          };
+        }
+
+        return await client.checkStatus(data.job_id);
+      } else {
+        // Use local ComfyUI via backend
+        const bridge = (globalThis as any).foundryMCPBridge;
+        if (!bridge?.socketBridge?.isConnected()) {
+          return { success: false, error: 'Backend not connected' };
+        }
+
+        return await this.sendBackendRequest('check-map-status-request', data);
+      }
     } catch (error) {
       return {
         success: false,
@@ -357,12 +590,28 @@ export class ComfyUIManager {
    */
   async cancelMapJob(data: { job_id: string }): Promise<any> {
     try {
-      const bridge = (globalThis as any).foundryMCPBridge;
-      if (!bridge?.socketBridge?.isConnected()) {
-        return { success: false, error: 'Backend not connected' };
-      }
+      const serviceType = this.getServiceType();
 
-      return await this.sendBackendRequest('cancel-map-job-request', data);
+      if (serviceType === 'runpod') {
+        // Use RunPod serverless
+        const client = this.initializeRunPodClient();
+        if (!client) {
+          return {
+            success: false,
+            error: 'RunPod not configured. Please set API key and endpoint in settings.'
+          };
+        }
+
+        return await client.cancelJob(data.job_id);
+      } else {
+        // Use local ComfyUI via backend
+        const bridge = (globalThis as any).foundryMCPBridge;
+        if (!bridge?.socketBridge?.isConnected()) {
+          return { success: false, error: 'Backend not connected' };
+        }
+
+        return await this.sendBackendRequest('cancel-map-job-request', data);
+      }
     } catch (error) {
       return {
         success: false,

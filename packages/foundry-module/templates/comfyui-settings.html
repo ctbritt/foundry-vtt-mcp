@@ -2,14 +2,31 @@
   <section class="eci-block">
     <h2 class="eci-title">Map Generation Service</h2>
     <p class="eci-note">
-      Configure your AI-powered battlemap creation service. ComfyUI runs locally on the same machine as your MCP server (where Claude Desktop is installed).
+      Configure your AI-powered battlemap creation service. Choose between local ComfyUI or RunPod serverless for faster cloud-based generation.
     </p>
   </section>
 
   <hr class="eci-divider"/>
 
-  <section class="eci-block">
-    <h3 class="eci-subtitle">Service Status</h3>
+  <section class="eci-block eci-settings-block">
+    <h3 class="eci-subtitle">Service Type</h3>
+
+    <div class="form-group">
+      <label for="serviceType">
+        <strong>Map Generation Backend</strong>
+      </label>
+      <select name="serviceType" id="serviceType">
+        <option value="local" {{#if (eq serviceType "local")}}selected{{/if}}>Local ComfyUI</option>
+        <option value="runpod" {{#if (eq serviceType "runpod")}}selected{{/if}}>RunPod Serverless</option>
+      </select>
+      <p class="notes">Local ComfyUI runs on your machine. RunPod Serverless uses cloud GPUs for faster generation.</p>
+    </div>
+  </section>
+
+  <hr class="eci-divider"/>
+
+  <section class="eci-block" id="local-service-section" style="display: {{#if (eq serviceType 'local')}}block{{else}}none{{/if}}">
+    <h3 class="eci-subtitle">Local ComfyUI Status</h3>
     <div class="eci-status-container">
       <div class="eci-status {{connectionStatus}}" id="connection-status">
         <span id="status-text">{{connectionStatusText}}</span>
@@ -28,12 +45,32 @@
     </div>
   </section>
 
+  <section class="eci-block eci-settings-block" id="runpod-config-section" style="display: {{#if (eq serviceType 'runpod')}}block{{else}}none{{/if}}">
+    <h3 class="eci-subtitle">RunPod Configuration</h3>
+
+    <div class="form-group">
+      <label for="runpodEndpoint">
+        <strong>RunPod Endpoint ID</strong>
+      </label>
+      <input type="text" name="runpodEndpoint" id="runpodEndpoint" value="{{runpodEndpoint}}" placeholder="e.g., nx9harqyfwbb3j" />
+      <p class="notes">Your RunPod serverless endpoint ID (found in RunPod dashboard)</p>
+    </div>
+
+    <div class="form-group">
+      <label for="runpodApiKey">
+        <strong>RunPod API Key</strong>
+      </label>
+      <input type="password" name="runpodApiKey" id="runpodApiKey" value="{{runpodApiKey}}" placeholder="rpa_..." />
+      <p class="notes">Your RunPod API key (kept secure, never shared)</p>
+    </div>
+  </section>
+
   <hr class="eci-divider"/>
 
   <section class="eci-block eci-settings-block">
-    <h3 class="eci-subtitle">Service Settings</h3>
+    <h3 class="eci-subtitle">General Settings</h3>
 
-    <label class="eci-check">
+    <label class="eci-check" id="auto-start-check" style="display: {{#if (eq serviceType 'local')}}block{{else}}none{{/if}}">
       <input type="checkbox" name="autoStartService" {{#if autoStartService}}checked{{/if}} />
       <span>
         <strong>Auto-start Map Generation Service</strong> — Automatically start ComfyUI when Foundry loads.
@@ -45,11 +82,11 @@
         <strong>Generation Quality</strong>
       </label>
       <select name="mapGenQuality" id="mapGenQuality">
-        <option value="low" {{#if (eq mapGenQuality "low")}}selected{{/if}}>Low</option>
-        <option value="medium" {{#if (eq mapGenQuality "medium")}}selected{{/if}}>Medium</option>
-        <option value="high" {{#if (eq mapGenQuality "high")}}selected{{/if}}>High</option>
+        <option value="low" {{#if (eq mapGenQuality "low")}}selected{{/if}}>Low (8 steps, fastest)</option>
+        <option value="medium" {{#if (eq mapGenQuality "medium")}}selected{{/if}}>Medium (20 steps, balanced)</option>
+        <option value="high" {{#if (eq mapGenQuality "high")}}selected{{/if}}>High (35 steps, best quality)</option>
       </select>
-      <p class="notes">Higher quality = better detail but slower generation. Generation time depends on your hardware.</p>
+      <p class="notes">Higher quality = better detail but slower generation. Generation time depends on your GPU.</p>
     </div>
   </section>
 
