@@ -28,6 +28,7 @@ import { CampaignManagementTools } from './tools/campaign-management.js';
 import { OwnershipTools } from './tools/ownership.js';
 import { TokenManipulationTools } from './tools/token-manipulation.js';
 import { MapGenerationTools } from './tools/map-generation.js';
+import { TotMGenerationTools } from './tools/totm-generation.js';
 
 // Logger setup
 const loggerConfig: LoggerConfig = {
@@ -66,6 +67,7 @@ const campaignManagementTools = new CampaignManagementTools(foundryClient, logge
 const ownershipTools = new OwnershipTools({ foundryClient, logger } as any);
 const tokenManipulationTools = new TokenManipulationTools({ foundryClient, logger } as any);
 const mapGenerationTools = new MapGenerationTools({ foundryClient, logger } as any);
+const totmGenerationTools = new TotMGenerationTools({ logger, foundryClient });
 
 /**
  * Main tool router - handles all MCP tool calls
@@ -197,6 +199,11 @@ async function handleToolCall(name: string, args: any): Promise<any> {
         break;
       case 'cancel-map-job':
         result = await mapGenerationTools.cancelMapJob(args);
+        break;
+
+      // Theatre of the Mind generation (OpenAI - no ComfyUI needed)
+      case 'generate-totm':
+        result = await totmGenerationTools.handleGenerateTotM(args);
         break;
 
       default:

@@ -1038,8 +1038,11 @@ export class QueryHandlers {
 
       // Upload to world-specific folder so maps persist even if module is deleted
       // This also keeps maps organized per world
+      // Supports optional subfolder for different image types (battlemaps, totm-images, etc.)
       const worldId = (game as any).world?.id || 'unknown-world';
-      const uploadPath = `worlds/${worldId}/ai-generated-maps`;
+      const subfolder = data.subfolder || 'ai-generated-maps';
+      const safeSubfolder = subfolder.replace(/[^a-zA-Z0-9_\-]/g, '-');
+      const uploadPath = `worlds/${worldId}/${safeSubfolder}`;
       try {
         // Use the modern Foundry API (v13+) with fallback for older versions
         const FilePickerAPI = (globalThis as any).foundry?.applications?.apps?.FilePicker?.implementation || (globalThis as any).FilePicker;
