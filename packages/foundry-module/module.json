@@ -1,8 +1,8 @@
 {
   "id": "foundry-mcp-bridge",
-  "title": "Foundry MCP Bridge",
-  "description": "Connect Foundry VTT to AI models through MCP protocol. Enable AI-powered actor creation, intelligent compendium search, campaign analysis, and interactive dice roll coordination. Supports Claude, local LLMs, and future AI models with comprehensive GM-only security.",
-  "version": "0.6.2",
+  "title": "Foundry MCP Bridge v2",
+  "description": "Connect Foundry VTT to AI models through MCP protocol via simple HTTP. Replaces complex WebRTC with direct HTTP to Mac server via Tailscale. GM-only security.",
+  "version": "2.0.0",
   "compatibility": {
     "minimum": "13",
     "verified": "13",
@@ -13,15 +13,14 @@
       "name": "Adam Dooley",
       "email": "adambriandooley@gmail.com",
       "url": "https://github.com/adambdooley"
+    },
+    {
+      "name": "Christopher Allbritton",
+      "url": "https://github.com/ctbritt"
     }
   ],
-  "url": "https://github.com/ctbritt/foundry-vtt-mcp",
-  "bugs": "https://github.com/ctbritt/foundry-vtt-mcp/issues",
-  "changelog": "https://github.com/ctbritt/foundry-vtt-mcp/releases",
-  "readme": "https://github.com/ctbritt/foundry-vtt-mcp/blob/master/README.md",
-  "license": "https://github.com/ctbritt/foundry-vtt-mcp/blob/master/LICENSE",
   "esmodules": [
-    "dist/main.js"
+    "dist/main-v2.js"
   ],
   "styles": [
     "styles/module.css",
@@ -34,16 +33,10 @@
       "path": "lang/en.json"
     }
   ],
-  "socket": true,
+  "socket": false,
   "manifest": "https://raw.githubusercontent.com/ctbritt/foundry-vtt-mcp/master/packages/foundry-module/module.json",
   "download": "https://github.com/ctbritt/foundry-vtt-mcp/releases/latest/download/foundry-vtt-mcp.zip",
   "protected": false,
   "coreTranslation": false,
-  "library": false,
-  "flags": {
-    "hotReload": {
-      "extensions": ["css", "hbs", "json"],
-      "paths": ["scripts", "styles", "templates", "lang"]
-    }
-  }
+  "library": false
 }
