@@ -11,12 +11,14 @@
     "lint:fix": "eslint src --ext .ts --fix"
   },
   "dependencies": {
-    "socket.io-client": "^4.7.0"
+    "esbuild": "0.28.0",
+    "socket.io-client": "^4.7.0",
+    "werift": "0.22.9"
   },
   "devDependencies": {
+    "@league-of-foundry-developers/foundry-vtt-types": "^13.346.0-beta.20250812191140",
     "@types/node": "^20.0.0",
-    "typescript": "^5.0.0",
-    "@league-of-foundry-developers/foundry-vtt-types": "^9.280.0"
+    "typescript": "^5.0.0"
   },
   "files": [
     "dist",
