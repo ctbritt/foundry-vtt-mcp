@@ -29,7 +29,7 @@
     "size:analyze": "npm run bundle:server && npx esbuild-analyzer packages/mcp-server/dist/backend.bundle.cjs"
   },
   "devDependencies": {
-    "@league-of-foundry-developers/foundry-vtt-types": "^9.280.1",
+    "@league-of-foundry-developers/foundry-vtt-types": "^13.340.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.0.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
