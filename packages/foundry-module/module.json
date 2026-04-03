@@ -2,11 +2,11 @@
   "id": "foundry-mcp-bridge",
   "title": "Foundry MCP Bridge v2",
   "description": "Connect Foundry VTT to AI models through MCP protocol via simple HTTP. Replaces complex WebRTC with direct HTTP to Mac server via Tailscale. GM-only security.",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "compatibility": {
     "minimum": "13",
-    "verified": "13",
-    "maximum": "13"
+    "verified": "14",
+    "maximum": "14"
   },
   "authors": [
     {
