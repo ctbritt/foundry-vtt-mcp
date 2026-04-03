@@ -30,10 +30,10 @@ export class FoundryWSServer extends EventEmitter {
    */
   start(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.wss = new WebSocketServer({ port: this.port, host: '127.0.0.1' });
+      this.wss = new WebSocketServer({ port: this.port, host: '0.0.0.0' });
 
       this.wss.on('listening', () => {
-        console.log(`[WS] Foundry MCP WebSocket server listening on 127.0.0.1:${this.port}`);
+        console.log(`[WS] Foundry MCP WebSocket server listening on 0.0.0.0:${this.port}`);
         resolve();
       });
 

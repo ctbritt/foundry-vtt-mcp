@@ -114,8 +114,8 @@ export class FoundryMCPHttpServer {
   start(): Promise<void> {
     return new Promise((resolve, reject) => {
       this.server.on('error', reject);
-      this.server.listen(this.port, '127.0.0.1', () => {
-        console.log(`[HTTP] Foundry MCP HTTP server listening on 127.0.0.1:${this.port}`);
+      this.server.listen(this.port, '0.0.0.0', () => {
+        console.log(`[HTTP] Foundry MCP HTTP server listening on 0.0.0.0:${this.port}`);
         resolve();
       });
     });

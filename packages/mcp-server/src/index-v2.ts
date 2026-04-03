@@ -29,6 +29,7 @@ import { OwnershipTools } from './tools/ownership.js';
 import { TokenManipulationTools } from './tools/token-manipulation.js';
 import { MapGenerationTools } from './tools/map-generation.js';
 import { TotMGenerationTools } from './tools/totm-generation.js';
+import { BasicRetrievalTools } from './tools/basic-retrieval.js';
 
 // Logger setup
 const loggerConfig: LoggerConfig = {
@@ -68,6 +69,7 @@ const ownershipTools = new OwnershipTools({ foundryClient, logger } as any);
 const tokenManipulationTools = new TokenManipulationTools({ foundryClient, logger } as any);
 const mapGenerationTools = new MapGenerationTools({ foundryClient, logger } as any);
 const totmGenerationTools = new TotMGenerationTools({ logger, foundryClient });
+const basicRetrievalTools = new BasicRetrievalTools(foundryClient, logger);
 
 /**
  * Main tool router - handles all MCP tool calls
@@ -147,6 +149,17 @@ async function handleToolCall(name: string, args: any): Promise<any> {
         break;
       case 'search-journals':
         result = await questCreationTools.handleSearchJournals(args);
+        break;
+
+      // Basic retrieval tools
+      case 'get-journal-entry':
+        result = await basicRetrievalTools.handleGetJournalEntry(args);
+        break;
+      case 'get-actor':
+        result = await basicRetrievalTools.handleGetActor(args);
+        break;
+      case 'get-scene':
+        result = await basicRetrievalTools.handleGetScene(args);
         break;
 
       // Dice roll tools
